@@ -4,7 +4,7 @@ import { unlock } from './audio.js';
 export const G = {
   W: 240, H: 400, scale: 1, dpr: 1, safeTop: 0, safeBottom: 0,
   time: 0, frameNow: 0, scene: null, hits: [], modalIndex: -1,
-  shake: 0, flash: null, trans: null, press: null,
+  shake: 0, flash: null, trans: null, press: null, pointer: null,
 };
 
 const canvas = document.getElementById('game');
@@ -136,9 +136,26 @@ export function start(first) {
   canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
     unlock();
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
     const [x, y] = toLogical(e);
+    G.pointer = { id: e.pointerId, down: true };
     dispatchTap(x, y);
   }, { passive: false });
+  // Drags (rune drawing) go to the scene as a stream of points after the initial tap.
+  canvas.addEventListener('pointermove', e => {
+    if (!G.pointer || G.pointer.id !== e.pointerId) return;
+    e.preventDefault();
+    const [x, y] = toLogical(e);
+    G.scene?.onDrag?.(x, y);
+  }, { passive: false });
+  const release = e => {
+    if (!G.pointer || G.pointer.id !== e.pointerId) return;
+    G.pointer = null;
+    const [x, y] = toLogical(e);
+    G.scene?.onRelease?.(x, y);
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
   document.addEventListener('gesturestart', e => e.preventDefault());

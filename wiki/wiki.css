@@ -136,6 +136,7 @@ code { font: 13px ui-monospace, Menlo, monospace; background: var(--panel); padd
 .chip.feint { background: #b070e0; color: #230b33; }
 .chip.orb { background: #7ac040; color: #142808; }
 .chip.strike { background: #f0d050; color: #3a2a04; }
+.chip.rune { background: #ff70b0; color: #3a0a22; }
 .r0 { color: var(--muted); font-weight: 700; } .r1 { color: #2f7fc0; font-weight: 700; } .r2 { color: #8b3fc0; font-weight: 700; } .r3 { color: #c07a00; font-weight: 700; }
 .good { color: var(--good); } .bad { color: var(--bad); }
 
@@ -192,3 +193,5 @@ code { font: 13px ui-monospace, Menlo, monospace; background: var(--panel); padd
   h1 { font-size: 1.7em; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+.rune-glyph { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 10px 4px 0; font-size: 12px; color: #ff70b0; }

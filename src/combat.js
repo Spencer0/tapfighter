@@ -1,10 +1,12 @@
 // Timing-based battle scene. Player phase: tap closing rings on the foe.
 // Enemy phase: tap shields to parry, smash orbs, and leave skull feints alone.
+// Runes: drag to trace curse glyphs before they land, and your own sigil after a flawless turn.
 import { G, setScene, shake, flash } from './engine.js';
 import { text } from './font.js';
 import { SPR, weaponIcon } from './sprites.js';
 import { disc, ring, ellipse, line, silhouette, pixelsOf, clamp, lerp } from './gfx.js';
-import { ENEMIES, weaponStats, potionHeal, gainXp, goldMul, makeWeapon, weaponName, RARITY } from './data.js';
+import { ENEMIES, weaponStats, potionHeal, gainXp, goldMul, makeWeapon, weaponName, RARITY, RUNE_TIME, SIGIL_TIME, runeTime } from './data.js';
+import { RUNES, gradeRune, drawRune } from './runes.js';
 import { sfx, playMusic } from './audio.js';
 import { rand } from './rng.js';
 import * as ui from './ui.js';
@@ -80,7 +82,7 @@ export class Combat {
       y = clamp(y, this.top + R_IN + 8, this.barY - 22);
       let dmin = 1e9;
       for (const m of this.marks) {
-        if (m.done || Math.abs(m.hitT - hitT) > lead + 120) continue;
+        if (m.done || m.kind === 'rune' || Math.abs(m.hitT - hitT) > lead + 120) continue;
         const p = this.markPos(m, m.hitT);
         dmin = Math.min(dmin, Math.hypot(p.x - x, p.y - y));
       }
@@ -91,6 +93,7 @@ export class Combat {
   }
 
   markPos(m, t = this.clock) {
+    if (m.kind === 'rune') return { x: m.x, y: m.y };
     if (m.kind === 'orb') {
       const p = clamp(1 - (m.hitT - t) / m.lead, 0, 1);
       return { x: lerp(m.sx, m.tx, p), y: lerp(m.sy, m.ty, p) - Math.sin(p * Math.PI) * 24 };
@@ -106,8 +109,9 @@ export class Combat {
     if (this.over) return;
     const w = this.run.weapons[this.run.equipped];
     const s = (this.ws = weaponStats(w, this.run));
-    this.phase = 'player'; this.marks = []; this.phaseResolved = 0;
+    this.phase = 'player'; this.marks = []; this.phaseResolved = 0; this.phaseHits = 0; this.stroke = null;
     const n = s.strikes + this.bonus; this.bonus = 0;
+    this.phaseStrikes = n; this.sigilOffered = false;
     const t0 = this.clock + 250 + s.lead;
     const r = this.foeRect();
     const head = [r.x + this.def.head[0] * r.w, r.y + this.def.head[1] * r.h];
@@ -143,18 +147,22 @@ export class Combat {
     const atk = this.def.boss ? atks[this.attackIdx++ % atks.length] : rand.pick(atks);
     const enraged = this.def.boss && f.hp < f.maxHp / 2;
     const lead = Math.round(atk.lead * (enraged ? 0.85 : 1));
-    this.phase = 'enemy'; this.foeA.wind = 1;
+    this.phase = 'enemy'; this.foeA.wind = 1; this.stroke = null;
     this.atkGuards = 0; this.atkParries = 0;
     const start = this.clock + 520;
     const B = this.run.bless;
     const hr = this.heroRect();
     const zone = { x: hr.x - 26, y: hr.y - 30, w: hr.w + 52, h: hr.h + 14 };
     const fr = this.foeRect();
-    let hasFeint = false, hasOrb = false;
+    let hasFeint = false, hasOrb = false, hasRune = false;
     for (const h of atk.hits) {
       const hitT = start + lead + Math.round(h.t * (enraged ? 0.85 : 1));
-      const dmg = Math.max(1, Math.round(f.dmg * atk.mul));
-      if (h.type === 'orb') {
+      const dmg = Math.max(1, Math.round(f.dmg * atk.mul * (h.mul || 1)));
+      if (h.type === 'rune') {
+        hasRune = true;
+        const win = Math.round(runeTime(this.run, RUNE_TIME) * (enraged ? 0.85 : 1));
+        this.addRune('curse', rand.pick(h.runes), start + Math.round(h.t * (enraged ? 0.85 : 1)), win, dmg);
+      } else if (h.type === 'orb') {
         hasOrb = true;
         this.marks.push({ kind: 'orb', sx: fr.x + fr.w / 2, sy: fr.y + fr.h * 0.45, tx: this.heroX + rand.range(-8, 8), ty: hr.y + hr.h * 0.4,
           hitT, lead, spawnT: hitT - lead, dmg, done: false });
@@ -166,8 +174,18 @@ export class Combat {
       }
     }
     this.prompt(atk.name.toUpperCase() + (enraged ? '!!' : '!'), '#ff6050');
-    if (this.hints) this.hint = hasFeint ? "DON'T TAP SKULLS - THEY'RE FEINTS" : hasOrb ? 'TAP ORBS BEFORE THEY HIT YOU' : 'TAP SHIELDS ON TIME TO PARRY';
+    if (hasRune) sfx('rune');
+    if (this.hints) this.hint = hasRune ? 'DRAG TO TRACE THE RUNE BEFORE IT LANDS' : hasFeint ? "DON'T TAP SKULLS - THEY'RE FEINTS" : hasOrb ? 'TAP ORBS BEFORE THEY HIT YOU' : 'TAP SHIELDS ON TIME TO PARRY';
   }
+
+  // A rune glyph to trace. owner 'curse' = enemy spell (fail = hit), 'sigil' = your bonus blast.
+  addRune(owner, id, spawnT, win, dmg = 0) {
+    const size = this.runeSize();
+    this.marks.push({ kind: 'rune', owner, rune: id, x: Math.round(G.W / 2), y: Math.round(this.top + this.arenaH * 0.46),
+      size, spawnT, hitT: spawnT + win, lead: win, good: 0, dmg, tries: 0, done: false });
+  }
+  runeSize() { return Math.round(Math.max(48, Math.min(G.W * 0.5, this.arenaH * 0.42, 120))); }
+  activeRune(t = this.clock) { return this.marks.find(m => m.kind === 'rune' && !m.done && t >= m.spawnT); }
 
   endPhase() {
     const was = this.phase;
@@ -186,7 +204,7 @@ export class Combat {
     const tT = this.clock + Math.min(60, performance.now() - G.frameNow);
     let best = null, bs = 1e9;
     for (const m of this.marks) {
-      if (m.done || tT < m.spawnT) continue;
+      if (m.done || tT < m.spawnT || m.kind === 'rune') continue;
       if (this.phase === 'player' && m.kind !== 'strike') continue;
       const p = this.markPos(m, tT);
       const d = Math.hypot(p.x - x, p.y - y);
@@ -195,6 +213,7 @@ export class Combat {
       if (sc < bs) { bs = sc; best = m; }
     }
     if (!best) {
+      if (this.activeRune(tT)) { this.stroke = [[x, y]]; return; }
       if (this.phase === 'player' && this.marks.some(m => !m.done && tT >= m.spawnT)) {
         this.combo = 0;
         this.pop('WHIFF', x, y - 6, '#8a7a9a');
@@ -203,6 +222,60 @@ export class Combat {
       return;
     }
     this.resolve(best, tT);
+  }
+
+  onDrag(x, y) {
+    const s = this.stroke;
+    if (!s) return;
+    const [lx, ly] = s[s.length - 1];
+    if (Math.hypot(x - lx, y - ly) >= 1.5 && s.length < 400) s.push([x, y]);
+  }
+
+  onRelease(x, y) {
+    const s = this.stroke;
+    this.stroke = null;
+    if (!s) return;
+    this.onDrag(x, y);
+    const m = this.activeRune();
+    if (!m || this.over) return;
+    // Ignore taps and tiny wiggles; only a real attempt counts.
+    let len = 0;
+    for (let i = 1; i < s.length; i++) len += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]);
+    if (len < m.size * 0.6) return;
+    const grade = gradeRune(s, m.rune, m.size * 0.3);
+    this.trail = { pts: s, t: 0, ok: grade !== 'fail' };
+    if (grade === 'fail') {
+      m.tries++;
+      this.pop('FIZZLE - AGAIN!', m.x, m.y + m.size / 2 + 6, '#8a7a9a');
+      sfx('fizzle');
+      return;
+    }
+    this.runeDone(m, grade === 'perfect');
+  }
+
+  runeDone(m, perfect) {
+    m.done = true;
+    const B = this.run.bless;
+    const lore = 1 + 0.5 * (B.runic || 0);
+    this.combo++;
+    this.run.bestCombo = Math.max(this.run.bestCombo || 0, this.combo);
+    this.burst(m.x, m.y, m.owner === 'curse' ? '#ff70c0' : '#f0d050', 24, 110);
+    shake(perfect ? 4 : 2);
+    if (m.owner === 'curse') {
+      // The curse rebounds on its caster and ignores armor.
+      this.pop(perfect ? 'PERFECT DISPEL!' : 'DISPELLED!', m.x, m.y - m.size / 2 - 8, '#ff90d0', perfect ? 2 : 1);
+      sfx('dispel');
+      this.damageFoe(Math.max(1, Math.round(m.dmg * 0.6 * (perfect ? 1.5 : 1) * lore)), '#ff90d0', null, 'BACKLASH');
+    } else {
+      const s = this.ws || weaponStats(this.run.weapons[this.run.equipped], this.run);
+      const comboMul = 1 + Math.min(1, this.combo * 0.06 * (1 + 0.5 * (B.combo || 0)));
+      const dmg = Math.round(s.dmg * 1.25 * (perfect ? 1.5 : 1) * comboMul * lore * (this.def.boss ? s.boss : 1));
+      this.pop(perfect ? 'PERFECT SIGIL!' : 'SIGIL BLAST!', m.x, m.y - m.size / 2 - 8, '#f0d050', perfect ? 2 : 1);
+      sfx('sigil');
+      this.heroA.lunge = 1; this.heroA.swing = 1;
+      flash('#f0d050', 0.15);
+      this.damageFoe(Math.max(1, dmg), '#f0d050', { x: this.foeX, y: this.foeRect().y + this.foeRect().h / 2 }, 'SIGIL');
+    }
   }
 
   resolve(m, tT) {
@@ -234,6 +307,13 @@ export class Combat {
     if (m.kind === 'strike') { this.combo = 0; this.pop('MISS', p.x, p.y - 6, '#8a7a9a'); sfx('miss'); }
     else if (m.kind === 'guard') { this.foeA.lunge = 1; this.hurt(m.dmg); }
     else if (m.kind === 'feint') { this.pop('DODGED', p.x, p.y - 6, '#a898b0'); }
+    else if (m.kind === 'rune') {
+      if (m.owner === 'curse') {
+        this.pop('CURSED!', m.x, m.y - m.size / 2 - 8, '#ff5080', 2);
+        this.foeA.lunge = 1;
+        this.hurt(m.dmg);
+      } else this.pop('SIGIL FADES', m.x, m.y, '#8a7a9a');
+    }
   }
 
   strike(m, grade, p) {
@@ -246,6 +326,7 @@ export class Combat {
     }
     const s = this.ws, run = this.run, B = run.bless;
     const perfect = grade === 'perfect';
+    this.phaseHits++;
     this.combo++;
     run.bestCombo = Math.max(run.bestCombo || 0, this.combo);
     const comboMul = 1 + Math.min(1, this.combo * 0.06 * (1 + 0.5 * (B.combo || 0)));
@@ -448,6 +529,15 @@ export class Combat {
         else if (this.clock > m.hitT + m.good) this.autoResolve(m);
         if (this.over) break;
       }
+      // A flawless turn (every strike landed) earns a sigil to trace for a bonus blast.
+      if (!this.over && this.phase === 'player' && !this.sigilOffered && this.phaseStrikes > 0 && this.phaseHits === this.phaseStrikes &&
+        this.marks.every(m => m.done)) {
+        this.sigilOffered = true;
+        this.addRune('sigil', rand.pick(Object.keys(RUNES)), this.clock, runeTime(this.run, SIGIL_TIME));
+        this.pop('FLAWLESS!', G.W / 2, this.top + 14, '#f0d050');
+        sfx('rune');
+        if (this.hints) this.hint = 'DRAG ALONG THE SIGIL FOR A BONUS BLAST';
+      }
       if (!this.over && (this.phase === 'player' || this.phase === 'enemy') && this.marks.length && this.marks.every(m => m.done)) this.endPhase();
     }
     for (const p of this.parts) {
@@ -457,6 +547,7 @@ export class Combat {
     this.parts = this.parts.filter(p => p.t < p.life);
     for (const p of this.pops) { p.t += dt; p.y -= dt * 22 * (1 - p.t / p.life); }
     this.pops = this.pops.filter(p => p.t < p.life);
+    if (this.trail) { this.trail.t += dt; if (this.trail.t > 0.5) this.trail = null; }
     for (const s of this.slashes) s.t += dt;
     this.slashes = this.slashes.filter(s => s.t < 0.18);
     if (this.banner) { this.banner.t += dt; if (this.banner.t > this.banner.dur) this.banner = null; }
@@ -528,7 +619,9 @@ export class Combat {
       g.globalAlpha = 1;
     }
 
-    for (const m of this.marks) if (!m.done) this.drawMark(g, m);
+    for (const m of this.marks) if (!m.done && m.kind !== 'rune') this.drawMark(g, m);
+    for (const m of this.marks) if (!m.done && m.kind === 'rune' && this.clock >= m.spawnT) this.drawRuneMark(g, m);
+    this.drawStroke(g);
 
     for (const p of this.parts) {
       g.globalAlpha = Math.min(1, (p.life - p.t) * 3);
@@ -585,6 +678,36 @@ export class Combat {
       ring(g, x, y, rr, close ? cols[1] : cols[0], close ? 2 : 1);
       g.globalAlpha = 1;
     }
+  }
+
+  drawRuneMark(g, m) {
+    const curse = m.owner === 'curse';
+    const rem = clamp((m.hitT - this.clock) / m.lead, 0, 1);
+    const appear = clamp((this.clock - m.spawnT) / 150, 0, 1);
+    const R = Math.round(m.size * 0.62 * (0.6 + 0.4 * appear));
+    const col = curse ? '#ff5080' : '#f0d050', glow = curse ? '#ff90d0' : '#fff0a0';
+    g.globalAlpha = 0.72; disc(g, m.x, m.y, R, '#0a0614'); g.globalAlpha = 1;
+    ring(g, m.x, m.y, R, curse ? '#502040' : '#504020');
+    // Countdown: a ring of dots that empties as the rune nears completion.
+    const dots = 40, lit = Math.ceil(dots * rem);
+    for (let i = 0; i < dots; i++) {
+      const a = -Math.PI / 2 + (i / dots) * Math.PI * 2;
+      g.fillStyle = i < lit ? (rem < 0.3 && Math.floor(this.clock / 90) % 2 ? '#ffffff' : col) : '#2a1d33';
+      g.fillRect(Math.round(m.x + Math.cos(a) * (R + 3)) - 1, Math.round(m.y + Math.sin(a) * (R + 3)) - 1, 2, 2);
+    }
+    if (appear < 1) return;
+    const pulse = Math.floor(this.clock / 150) % 2 === 0;
+    drawRune(g, m.rune, m.x, m.y, m.size, pulse ? col : glow, { thick: 3, shadow: '#140c1c', start: '#ffffff', pulse });
+    text(g, curse ? 'TRACE TO DISPEL!' : 'TRACE THE SIGIL!', m.x, m.y + R + 8, glow, { align: 'center', outline: '#140c1c' });
+  }
+
+  drawStroke(g) {
+    const s = this.stroke ? { pts: this.stroke, t: 0, ok: null } : this.trail;
+    if (!s || s.pts.length < 2) return;
+    const col = s.ok === null ? '#ffffff' : s.ok ? '#a0f0ff' : '#8a7a9a';
+    g.globalAlpha = s.ok === null ? 1 : Math.max(0, 1 - s.t * 2);
+    for (let i = 1; i < s.pts.length; i++) line(g, s.pts[i - 1][0], s.pts[i - 1][1], s.pts[i][0], s.pts[i][1], col, 2);
+    g.globalAlpha = 1;
   }
 
   drawHud(g) {

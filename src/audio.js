@@ -98,6 +98,14 @@ export function sfx(name) {
     case 'heal': [600, 750, 900].forEach((f, i) => osc('sine', f, null, t + i * 0.07, 0.15, 0.12)); break;
     case 'buy': osc('square', 988, null, t, 0.06, 0.07); osc('square', 1319, null, t + 0.07, 0.15, 0.07); break;
     case 'boss': osc('sawtooth', 55, 50, t, 1.2, 0.2); osc('sawtooth', 82, 80, t, 1.2, 0.12); noise(t, 1, 0.2, 200, 'lowpass'); break;
+    case 'rune': osc('sine', 220, 660, t, 0.35, 0.1); osc('triangle', 330, 990, t + 0.08, 0.3, 0.06); break;
+    case 'fizzle': noise(t, 0.2, 0.15, 1200, 'lowpass'); osc('sawtooth', 300, 150, t, 0.15, 0.05); break;
+    case 'dispel':
+      [784, 988, 1319, 1568].forEach((f, i) => osc('square', f, null, t + i * 0.05, 0.12, 0.07));
+      noise(t, 0.3, 0.25, 4000, 'highpass'); break;
+    case 'sigil':
+      osc('sawtooth', 110, 55, t, 0.4, 0.15); noise(t, 0.35, 0.35, 1500);
+      [523, 784, 1047].forEach((f, i) => osc('square', f, null, t + i * 0.06, 0.15, 0.07)); break;
     case 'stun': osc('square', 1200, 600, t, 0.3, 0.06); osc('square', 1500, 750, t + 0.1, 0.3, 0.05); break;
   }
 }

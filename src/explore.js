@@ -1,8 +1,8 @@
-// Isometric dungeon exploration: tap to move, turn-based enemies, loot, shops, stairs.
+// Isometric dungeon exploration: tap to move (or autoexplore), turn-based enemies, loot, shops, stairs.
 import { G, setScene, shake, flash } from './engine.js';
 import { text } from './font.js';
 import { SPR, weaponIcon } from './sprites.js';
-import { flipH, dimmed, ellipse, makeCanvas } from './gfx.js';
+import { flipH, dimmed, ellipse, makeCanvas, disc, ring, line } from './gfx.js';
 import { TW, TH, WH, getTiles } from './tiles.js';
 import { generate, MW, MH, FLOOR } from './dungeon.js';
 import {
@@ -47,7 +47,7 @@ export class Explore {
     this.player = { x: px, y: py, fx: px, fy: py, t: 1, path: [], face: 1 };
     for (const e of this.ents) { e.rx = e.x; e.ry = e.y; }
     this.fx = []; this.msgs = []; this.motes = [];
-    this.turn = 0; this.target = null; this.camX = null;
+    this.turn = 0; this.target = null; this.camX = null; this.auto = false;
     this.computeFov();
     this.banner = { t: 0, text: `${m.theme.name} ${run.depth}`, sub: m.boss ? 'A great evil stirs...' : run.depth === 1 ? 'Tap the ground to walk' : '' };
     if (!saved) this.save();
@@ -158,6 +158,7 @@ export class Explore {
 
   onTap(sx, sy) {
     if (this.modal || this.inCombat) return;
+    if (this.auto) this.stopAuto();
     // Entities first (tall sprites stick up above their tile).
     let target = null;
     const vis = this.ents.filter(e => this.isShown(e) && e.kind !== 'stairs').sort((a, b) => (b.x + b.y) - (a.x + a.y));
@@ -197,7 +198,9 @@ export class Explore {
     if (this.modal) return;
     const p = this.player;
     const d = { ArrowUp: [-1, -1], ArrowDown: [1, 1], ArrowLeft: [-1, 1], ArrowRight: [1, -1], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] }[k];
+    if (d && this.auto) this.stopAuto();
     if (d && p.t >= 1 && !p.path.length) { p.path = [[p.x + d[0], p.y + d[1]]]; }
+    if (k === 'x') this.toggleAuto();
     if (k === 'Escape') this.openMenu();
   }
 
@@ -208,7 +211,10 @@ export class Explore {
     if (p.t < 1) {
       p.t = Math.min(1, p.t + dt / STEP);
       if (p.t >= 1) this.arrive();
-    } else if (!this.modal && !this.inCombat && p.path.length) this.tryStep();
+    } else if (!this.modal && !this.inCombat) {
+      if (this.auto) this.autoStep();
+      if (p.path.length) this.tryStep();
+    }
     const k = Math.min(1, dt * 14);
     for (const e of this.ents) { e.rx += (e.x - e.rx) * k; e.ry += (e.y - e.ry) * k; if (e.alert) e.alert = Math.max(0, e.alert - dt); }
     for (const f of this.fx) f.t += dt;
@@ -243,6 +249,10 @@ export class Explore {
     const p = this.player, run = this.run;
     run.steps++; this.turn++;
     this.computeFov();
+    if (this.auto) {
+      const seen = this.ents.find(e => e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)] && !this.autoSeen.has(e.id));
+      if (seen) { this.stopAuto(`${ENEMIES[seen.type].name} spotted!`, '#ff6050'); seen.alert = Math.max(seen.alert || 0, 0.6); }
+    }
     const last = p.path.length === 0;
     if (last) this.target = null;
     for (const e of this.ents.filter(e => e.x === p.x && e.y === p.y && !this.blocking(e))) this.onStand(e, last);
@@ -264,7 +274,7 @@ export class Explore {
       if (isDest) { this.player.path = []; this.pushModal(this.weaponDialog(e.weapon, e)); }
       else this.say('Something glints here...', '#a898b0');
     } else if (e.kind === 'stairs') {
-      if (isDest) { this.player.path = []; this.pushModal(this.descendDialog()); }
+      if (isDest && (!this.auto || this.autoGoal === 'stairs')) { this.stopAuto(); this.player.path = []; this.pushModal(this.descendDialog()); }
     }
   }
 
@@ -314,6 +324,7 @@ export class Explore {
   engage(e) {
     if (this.inCombat || this.run.hp <= 0) return;
     this.inCombat = true;
+    this.auto = false;
     this.player.path = [];
     sfx('engage');
     this.save();
@@ -418,6 +429,89 @@ export class Explore {
     }
   }
 
+  // ---------- Autoexplore ----------
+  // Walks to the nearest unexplored edge (grabbing gold, bottles and chests on the way), stops when a
+  // new monster comes into view, and heads for the stairs once the floor is done. Fights and the
+  // descend prompt are still up to the player.
+  toggleAuto() {
+    if (this.auto) { this.stopAuto('Autoexplore off.', '#a898b0'); return; }
+    if (this.modal || this.inCombat) return;
+    this.auto = true; this.autoGoal = null;
+    this.autoSeen = new Set(this.ents.filter(e => e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)]).map(e => e.id));
+    sfx('tap');
+    if (this.player.t >= 1) this.autoStep();
+  }
+
+  stopAuto(msg, col) {
+    if (!this.auto) return;
+    this.auto = false; this.autoGoal = null;
+    this.player.path = []; this.target = null;
+    if (msg) this.say(msg, col);
+  }
+
+  autoStep() {
+    const p = this.player;
+    const found = this.autoPath();
+    if (!found) {
+      const stairs = this.ents.find(e => e.kind === 'stairs' && this.explored[this.idx(e.x, e.y)]);
+      if (stairs && stairs.x === p.x && stairs.y === p.y) { this.stopAuto(); this.pushModal(this.descendDialog()); return; }
+      const path = stairs && this.findPath(stairs.x, stairs.y);
+      if (!path) {
+        this.stopAuto(this.ents.some(e => e.kind === 'enemy' && this.explored[this.idx(e.x, e.y)]) ? 'Something blocks the way.' : 'Nothing left to explore.', '#a898b0');
+        sfx('deny');
+        return;
+      }
+      if (this.autoGoal !== 'stairs') this.say('Floor explored. Heading to the stairs.', '#f0d050');
+      this.autoGoal = 'stairs';
+      p.path = path; this.target = [stairs.x, stairs.y];
+      return;
+    }
+    this.autoGoal = found.kind;
+    p.path = found.path; this.target = found.path[found.path.length - 1];
+  }
+
+  // BFS over known tiles to the closest frontier tile or pickup. Returns {path, kind} or null.
+  autoPath() {
+    const p = this.player, run = this.run;
+    const goals = new Map();
+    for (const e of this.ents) {
+      if (!this.explored[this.idx(e.x, e.y)]) continue;
+      const take = e.kind === 'gold' || e.kind === 'potion' || (e.kind === 'chest' && !e.opened) ||
+        (e.kind === 'fountain' && !e.used && run.hp < run.maxHp * 0.6);
+      if (take) goals.set(this.idx(e.x, e.y), e.kind);
+    }
+    const frontier = i => {
+      const x = i % MW, y = (i / MW) | 0;
+      for (const [dx, dy] of DIRS) if (this.inb(x + dx, y + dy) && !this.explored[this.idx(x + dx, y + dy)]) return true;
+      return false;
+    };
+    const start = this.idx(p.x, p.y);
+    const came = new Map([[start, -1]]);
+    const queue = [start];
+    for (let qi = 0; qi < queue.length; qi++) {
+      const cur = queue[qi];
+      if (cur !== start && (goals.has(cur) || frontier(cur))) {
+        const path = [];
+        for (let c = cur; c !== start; c = came.get(c)) path.unshift([c % MW, (c / MW) | 0]);
+        return { path, kind: goals.get(cur) || 'explore' };
+      }
+      const cx = cur % MW, cy = (cur / MW) | 0;
+      for (const [dx, dy] of DIRS) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.inb(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        if (came.has(ni) || !this.explored[ni] || !this.canStep(cx, cy, nx, ny)) continue;
+        const blocker = this.entAt(nx, ny, e => this.blocking(e));
+        if (blocker && !goals.has(ni)) continue;
+        came.set(ni, cur);
+        // Goals that block (chests, fountains) are bumped into, never walked through.
+        if (blocker) { const path = []; for (let c = ni; c !== start; c = came.get(c)) path.unshift([c % MW, (c / MW) | 0]); return { path, kind: goals.get(ni) }; }
+        queue.push(ni);
+      }
+    }
+    return null;
+  }
+
   // ---------- Dialogs ----------
   pushModal(m) { if (this.modal) this.queue.push(m); else this.modal = m; }
   closeModal() { this.modal = this.queue.shift() || null; this.save(); }
@@ -480,6 +574,7 @@ export class Explore {
   }
 
   descend() {
+    this.stopAuto();
     sfx('stairs');
     const run = this.run;
     run.depth++;
@@ -654,7 +749,7 @@ export class Explore {
     for (const en of this.ents) if (en.kind === 'stairs' && exp[this.idx(en.x, en.y)]) {
       const [sx, sy] = this.screenOf(en.x, en.y);
       g.drawImage(vis[this.idx(en.x, en.y)] ? T.stairs : dimmed(T.stairs), sx - HW, sy - HH);
-      if (Math.floor(t * 2) % 2) { g.globalAlpha = 0.3; g.drawImage(T.select, sx - HW, sy - HH); g.globalAlpha = 1; }
+      g.globalAlpha = 0.45 + Math.sin(t * 5) * 0.3; g.drawImage(silhouetteSel(T, '#f0d050'), sx - HW, sy - HH); g.globalAlpha = 1;
     }
     // Path & target
     if (p.path.length) {
@@ -709,6 +804,7 @@ export class Explore {
     // Vignette lighting
     if (!this.vignette || this.vignette.width !== W || this.vignette.height !== H) this.vignette = makeVignette(W, H);
     g.drawImage(this.vignette, 0, 0);
+    this.drawStairsBeacon(g, t);
 
     for (const f of this.fx) if (f.kind === 'float') {
       const [sx, sy] = this.screenOf(f.x, f.y);
@@ -718,6 +814,84 @@ export class Explore {
     }
 
     this.drawHud(g);
+  }
+
+  stairs() { return this.ents.find(e => e.kind === 'stairs' && this.explored[this.idx(e.x, e.y)]); }
+  stairsBounds() { return { top: G.safeTop + 30, bot: G.H - G.safeBottom - ui.BAR_H - 10, m: 14 }; }
+  stairsOnScreen(sx, sy) { const b = this.stairsBounds(); return sx >= b.m && sx <= G.W - b.m && sy - 46 >= b.top && sy <= b.bot; }
+
+  // A pillar of light and a bobbing arrow so the way down is easy to spot.
+  drawStairsBeacon(g, t) {
+    const st = this.stairs();
+    if (!st) return;
+    const [sx, sy] = this.screenOf(st.x, st.y);
+    if (sx < -30 || sx > G.W + 30 || sy < -10 || sy > G.H + 60) return;
+    const p = this.player;
+    const here = st.x === p.x && st.y === p.y;
+    const pulse = 0.5 + Math.sin(t * 4) * 0.5;
+    for (let i = 0; i < 40; i++) {
+      const w = Math.max(1, Math.round(10 - i / 5));
+      g.globalAlpha = (1 - i / 40) * (0.28 + pulse * 0.2);
+      g.fillStyle = i % 3 ? '#f0d050' : '#fff6c0';
+      g.fillRect(sx - w, sy - i, w * 2 + 1, 1);
+    }
+    g.globalAlpha = 1;
+    // Rising sparks
+    for (let k = 0; k < 4; k++) {
+      const ph = (t * 0.7 + k / 4) % 1;
+      g.globalAlpha = 1 - ph;
+      g.fillStyle = '#fff6c0';
+      g.fillRect(Math.round(sx + Math.sin(t * 3 + k * 2) * 5), Math.round(sy - 2 - ph * 30), 1, 1);
+    }
+    g.globalAlpha = 1;
+    if (here || !this.stairsOnScreen(sx, sy)) return;
+    const by = Math.round(sy - 46 + Math.sin(t * 5) * 3);
+    text(g, 'STAIRS', sx, by - 8, '#f0d050', { align: 'center', outline: '#140c1c' });
+    for (let r = 0; r < 5; r++) {
+      g.fillStyle = '#140c1c'; g.fillRect(sx - 5 + r - 1, by + r - 1, (5 - r) * 2 + 3, 3);
+    }
+    for (let r = 0; r < 5; r++) { g.fillStyle = r < 2 ? '#fff6c0' : '#f0d050'; g.fillRect(sx - 5 + r, by + r, (5 - r) * 2 + 1, 1); }
+  }
+
+  // Edge-of-screen pointer to known stairs that are off screen (tap it to walk there), and a big
+  // DESCEND button while standing on them.
+  drawStairsHud(g, barY) {
+    const st = this.stairs();
+    if (!st || this.modal) return;
+    const p = this.player, t = G.time;
+    if (st.x === p.x && st.y === p.y) {
+      if (this.player.t < 1 || p.path.length) return;
+      const bw = 96, bh = 20, bx = Math.round((G.W - bw) / 2), by = Math.min(barY - 50, Math.round(G.H * 0.47) + 14);
+      const glow = Math.floor(t * 3) % 2 === 0;
+      ui.button(g, bx, by, bw, bh, 'DESCEND', () => this.descend(), {
+        primary: true, scale: 2, fill: glow ? '#4a3a18' : '#3a2a10', border: '#f0d050', color: glow ? '#fff6c0' : '#f0d050',
+      });
+      return;
+    }
+    const [sx, sy] = this.screenOf(st.x, st.y);
+    if (this.stairsOnScreen(sx, sy)) return;
+    const { top, bot, m } = this.stairsBounds();
+    const cx = G.W / 2, cy = (top + bot) / 2;
+    const dx = sx - cx, dy = sy - cy;
+    const k = Math.min((G.W / 2 - m) / Math.max(1e-3, Math.abs(dx)), ((bot - top) / 2 - m) / Math.max(1e-3, Math.abs(dy)));
+    const ax = Math.round(cx + dx * k), ay = Math.round(cy + dy * k);
+    const ang = Math.atan2(dy, dx), ux = Math.cos(ang), uy = Math.sin(ang);
+    const bob = Math.sin(t * 6) * 2;
+    const tipX = ax + ux * (4 + bob), tipY = ay + uy * (4 + bob);
+    disc(g, ax, ay, 9, 'rgba(20,12,28,0.8)');
+    ring(g, ax, ay, 9, '#f0d050');
+    for (let i = 0; i < 7; i++) {
+      const bx = tipX - ux * i, byy = tipY - uy * i, w = Math.floor(i * 0.6);
+      line(g, bx - uy * w, byy + ux * w, bx + uy * w, byy - ux * w, '#f0d050');
+    }
+    const lx = Math.max(16, Math.min(G.W - 16, ax)), ly = ay + (ay > cy ? -17 : 12);
+    text(g, 'STAIRS', lx, ly, '#f0d050', { align: 'center', outline: '#140c1c' });
+    ui.hit(ax - 12, ay - 12, 24, 24, () => {
+      if (this.auto) this.stopAuto();
+      const path = this.findPath(st.x, st.y);
+      if (!path) { sfx('deny'); return; }
+      this.player.path = path; this.target = [st.x, st.y]; sfx('tap');
+    });
   }
 
   drawEnt(g, d) {
@@ -774,8 +948,13 @@ export class Explore {
     const barY = ui.actionBar(g, run, {
       onSlot: i => this.selectWeapon(i),
       onPotion: () => this.usePotion(),
-      extras: [{ icon: SPR.menu, fn: () => this.openMenu() }],
+      extras: [
+        { label: this.auto ? 'STOP' : 'AUTO', fn: () => this.toggleAuto(), color: this.auto ? '#f0d050' : '#70d0e0' },
+        { icon: SPR.menu, fn: () => this.openMenu() },
+      ],
     });
+    if (this.auto && Math.floor(G.time * 2) % 2 === 0) text(g, 'AUTOEXPLORING', W - 4, G.safeTop + 21, '#70d0e0', { align: 'right', outline: '#140c1c' });
+    this.drawStairsHud(g, barY);
     this.msgs.forEach((m, i) => {
       g.globalAlpha = Math.min(1, (4 - m.t) * 2);
       text(g, m.text, 5, barY - 10 - (this.msgs.length - 1 - i) * 8, m.col, { outline: '#140c1c' });

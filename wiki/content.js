@@ -1,7 +1,8 @@
 // Wiki page content. Stats are computed from ../src/data.js; prose is hand-written.
 import {
-  THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, scaleEnemy, xpNeed, weaponStats,
+  THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, scaleEnemy, xpNeed, weaponStats,
 } from '../src/data.js';
+import { RUNES } from '../src/runes.js';
 import { SPR, weaponIcon } from '../src/sprites.js';
 import { makeBackdrop } from '../src/backdrop.js';
 import { getTiles } from '../src/tiles.js';
@@ -75,7 +76,7 @@ const MON = {
   },
   imp: {
     intro: 'mischievous little devils that join the Boneyard from floor 2. They introduce the two trickiest mechanics in the game: <b>feints</b> and <b>orbs</b>.',
-    strat: '<i>Trickery</i> opens with a purple <b>skull feint</b>. Tapping it costs you 60% of a hit and your combo. Wait for the real shield 400ms later. <i>Firebolt</i> is a slow-moving green <b>orb</b>: tap it at any point in its flight. Learn the Imp well, because its tricks return in much nastier forms later.',
+    strat: '<i>Trickery</i> opens with a purple <b>skull feint</b>. Tapping it costs you 60% of a hit and your combo. Wait for the real shield 400ms later. <i>Firebolt</i> is a slow-moving green <b>orb</b>: tap it at any point in its flight. <i>Hex Sigil</i> is the first <b>rune</b> curse you will meet: drag your finger along the glowing Vee or Hook, starting from the white dot, to dispel it and bounce damage back. Learn the Imp well, because its tricks return in much nastier forms later.',
     trivia: 'The Imp is the only regular monster with all three defensive mark types in its moveset.',
   },
   pumpkin: {
@@ -100,7 +101,7 @@ const MON = {
   },
   witch: {
     intro: 'cackling hags of the Cursed Cathedral who fight entirely from range.',
-    strat: '<i>Hex Volley</i> fires <b>three orbs</b>. They arc across the screen, so tap them early in flight rather than waiting for them to reach you. <i>Curse</i> is a feint followed by a shield. Witches have low HP, so rush them down with multi-hit weapons.',
+    strat: '<i>Hex Volley</i> fires <b>three orbs</b>. They arc across the screen, so tap them early in flight rather than waiting for them to reach you. <i>Curse</i> is a feint followed by a shield. <i>Witch Mark</i> is a hard-hitting <b>rune</b> (Bolt, Triangle or Hourglass): trace it calmly, a failed trace can be retried until the countdown runs out. Witches have low HP, so rush them down with multi-hit weapons.',
     trivia: 'The witch carries her broom into battle but never rides it.',
   },
   mimic: {
@@ -140,7 +141,9 @@ export function buildPages(H) {
   const wicon = (k, s = 2) => img(weaponIcon(k), s, WEAPONS[k].name);
   const potion = (s = 2) => img(SPR.potion, s, 'Life Bottle');
   const coin = img(SPR.coin, 2, 'Coins');
-  const markName = { guard: 'Shield', feint: 'Skull', orb: 'Orb' };
+  const markName = { guard: 'Shield', feint: 'Skull', orb: 'Orb', rune: 'Rune' };
+  const markLabel = h => (h.type === 'rune' ? `Rune (${h.runes.map(r => RUNES[r].name).join('/')})` : markName[h.type]) +
+    ` +${h.t}ms` + (h.mul ? ` ×${Math.round(h.mul * 100)}%` : '');
 
   const bestiaryNav = () => navbox('Monsters of Tapfighter', [
     ['Boneyard', ['zombie', 'skeleton', 'bat', 'imp', 'pumpkin'].map(mlink)],
@@ -166,7 +169,7 @@ export function buildPages(H) {
     return table(['Attack', 'Pattern (time after first mark)', 'Ring time', 'Dmg per hit', `Hit on floor ${floor}`],
       d.attacks.map(a => [
         `<b>${a.name}</b>`,
-        { html: a.hits.map(h => chip(h.type, `${markName[h.type]} +${h.t}ms`)).join(' ') },
+        { html: a.hits.map(h => chip(h.type, markLabel(h))).join(' ') },
         `${a.lead}ms`, `${Math.round(a.mul * 100)}%`, hitDmg(t, floor, a.mul),
       ]));
   };
@@ -206,7 +209,7 @@ export function buildPages(H) {
     const plural = d.name.endsWith('h') ? 'es' : 's';
     let body = ib + `<p><b>${d.name}</b>${isBoss ? ' is' : plural + ' are'} ${MON[t].intro}</p>`;
     body += h2('Attacks');
-    body += `<p>${isBoss ? `Bosses use their attacks in a <b>fixed rotation</b>, starting from the top of this table and looping.` : `Each turn the ${d.name} picks one of these attacks at random.`} ${chip('guard', 'Shield')} = tap on time to parry; ${chip('feint', 'Skull')} = feint, do <b>not</b> tap; ${chip('orb', 'Orb')} = projectile, tap to smash. See ${link('Combat')} for details.</p>`;
+    body += `<p>${isBoss ? `Bosses use their attacks in a <b>fixed rotation</b>, starting from the top of this table and looping.` : `Each turn the ${d.name} picks one of these attacks at random.`} ${chip('guard', 'Shield')} = tap on time to parry; ${chip('feint', 'Skull')} = feint, do <b>not</b> tap; ${chip('orb', 'Orb')} = projectile, tap to smash; ${chip('rune', 'Rune')} = curse, drag to trace the glyph before it lands (${RUNE_TIME / 1000}s). Rune ring time is the trace window, not the attack's. See ${link('Combat')} for details.</p>`;
     body += attackTable(t, first);
     if (isBoss) body += note(`<b>Enrage:</b> below 50% HP (${Math.ceil(s.hp / 2)} HP on floor ${first}) every ring closes <b>15% faster</b> and the gaps between hits shrink by the same amount.`, true);
     if (!isBoss) {
@@ -245,6 +248,7 @@ export function buildPages(H) {
 <li><b>Seed Barrage</b> (4 orbs, ${dm(0.5)} each): tap each seed as soon as it leaves him. They come 300ms apart; do not wait for them to arc down to you.</li>
 <li><b>Gourd Smash</b> is the run-killer: <b>two skull feints</b> and then a real shield at +650ms that hits for <b>${dm(1.6)}</b>. Most deaths here come from tapping a skull out of nerves (which loses your combo and costs ${Math.max(1, Math.round(dm(1.6) * 0.6))} HP) or missing the real shield. Keep your thumbs still until the cyan shield appears.</li>
 <li><b>Root Grab</b> (2 shields, ${dm(0.9)} each, 500ms apart) is slow and easy. Relax and parry.</li>
+<li><b>Jack's Hex</b>: a rune curse (Vee, Triangle or Hook) that lands for <b>${dm(1.5)}</b> if you fail to trace it. Dispelling it bounces ${Math.round(dm(1.5) * 0.6)} damage back through his armour.</li>
 <li><b>Below ${Math.ceil(s.hp / 2)} HP he enrages</b> and everything is 15% faster. Save a ${link('Life_Bottle', 'Life Bottle')} for this phase, and drink it during <i>his</i> turn if you can, because drinking during your strike turn ends your turn.</li>
 </ol>
 ${note(`<b>Preparation checklist:</b> reach about level 4-5, carry 3+ Life Bottles (the ${link('Merchant')} always appears on floor 3), use any ${link('Fountain')} on floors 4-5 before descending, and pick defensive ${link('Blessings')} such as Iron Guard or Riposte if offered.`)}`;
@@ -254,6 +258,7 @@ ${note(`<b>Preparation checklist:</b> reach about level 4-5, carry 3+ Life Bottl
 <li><b>Earthquake</b>: four shields 200ms apart (${dm(0.5)} each). This is the fastest burst in the game. If you can't parry it, block it: Good taps still absorb most of the damage.</li>
 <li><b>Skull Toss</b>: two orbs that hit for ${dm(0.9)} each. Smash them early.</li>
 <li><b>Crush</b>: a skull feint then a real shield 400ms later that hits for <b>${dm(1.8)}</b>, the hardest single hit before the Lich.</li>
+<li><b>Bone Glyph</b>: a rune (Zed or Hourglass, ${dm(1.6)} if it lands) while two skulls appear around you. Only <i>tapping</i> a skull triggers it, so start your trace on the rune, not on a skull.</li>
 <li><b>Rib Rattle</b>: shield, shield, <b>skull</b>, shield. The feint hidden in the middle of a rhythm catches people who tap on autopilot.</li>
 </ul>`;
     } else {
@@ -261,7 +266,7 @@ ${note(`<b>Preparation checklist:</b> reach about level 4-5, carry 3+ Life Bottl
 <ul>
 <li><b>Soul Storm</b>: <b>five orbs</b> 250ms apart (${dm(0.5)} each). Tap them in order as they launch.</li>
 <li><b>Death Grip</b>: two skulls, then two real shields (${dm(0.8)} each).</li>
-<li><b>Doom</b>: a single shield with a long 1300ms ring that hits for <b>${dm(2.2)}</b>. The long ring makes it easy to tap too early. Wait for the ring to touch the centre.</li>
+<li><b>Doom Sigil</b>: a rune curse (Crown, Bolt or Hourglass) that hits for <b>${dm(2.0)}</b>, with two orbs (${dm(0.6)} each) thrown while you trace. Smash the orbs with quick taps and keep tracing; a fizzled trace can be retried.</li>
 <li><b>Phantom Blades</b>: five marks with a skull in fourth position. Parry, parry, parry, <i>stop</i>, parry.</li>
 </ul>
 <p>Defeating him wins the game: you may retire as a legend or continue into ${link('Endless_mode', 'Endless mode')}.</p>`;

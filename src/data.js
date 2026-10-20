@@ -125,13 +125,20 @@ export function weaponTraits(w) {
 }
 
 // ---------- Enemies ----------
-// hits: offsets (ms) of each incoming blow. type guard = tap to parry, feint = DON'T tap, orb = tap to smash.
+// hits: offsets (ms) of each incoming blow. type guard = tap to parry, feint = DON'T tap, orb = tap to smash,
+// h.mul scales one hit on top of the attack's mul.
+// rune = trace the glyph (one of h.runes) before its curse lands; the trace window is RUNE_TIME, not the attack lead.
 const A = (name, hits, lead, mul = 1) => ({
   name, lead, mul,
   hits: hits.map(h => (typeof h === 'number' ? { t: h, type: 'guard' } : { type: 'guard', ...h })),
 });
 const F = t => ({ t, type: 'feint' });
-const O = t => ({ t, type: 'orb' });
+const O = (t, mul) => ({ t, type: 'orb', mul });
+const R = (t, runes) => ({ t, type: 'rune', runes });
+
+export const RUNE_TIME = 2300; // ms to trace an enemy curse rune
+export const SIGIL_TIME = 1900; // ms to trace your own sigil after a flawless turn
+export const runeTime = (run, base) => Math.round(base * (1 + 0.3 * (run.bless.runic || 0)));
 
 export const ENEMIES = {
   zombie: { name: 'Zombie', hp: 26, dmg: 6, armor: 0, xp: 6, gold: [2, 5], slow: true, blood: '#9cb87a', head: [0.45, 0.18],
@@ -141,28 +148,33 @@ export const ENEMIES = {
   bat: { name: 'Giant Bat', hp: 12, dmg: 4, armor: 0, xp: 4, gold: [1, 3], fast: true, fly: true, blood: '#9a58c0', head: [0.5, 0.5],
     attacks: [A('Swoop', [0, 260, 520], 720, 0.6), A('Bite', [0], 650)] },
   imp: { name: 'Imp', hp: 20, dmg: 6, armor: 0, xp: 8, gold: [3, 7], blood: '#d04040', head: [0.5, 0.3],
-    attacks: [A('Trickery', [F(0), 400], 850), A('Firebolt', [O(0)], 1100), A('Poke', [0, 300], 800, 0.6)] },
+    attacks: [A('Trickery', [F(0), 400], 850), A('Firebolt', [O(0)], 1100), A('Poke', [0, 300], 800, 0.6),
+      A('Hex Sigil', [R(0, ['vee', 'hook'])], 900, 1.2)] },
   pumpkin: { name: 'Pumpkin Knight', hp: 44, dmg: 9, armor: 2, xp: 13, gold: [4, 10], blood: '#e8822c', head: [0.5, 0.25],
     attacks: [A('Cleave', [0], 950, 1.5), A('Flurry', [0, 330, 660], 880, 0.6)] },
   ghoul: { name: 'Ghoul', hp: 34, dmg: 8, armor: 0, xp: 11, gold: [3, 8], fast: true, blood: '#a898b0', head: [0.5, 0.2],
     attacks: [A('Frenzy', [0, 240, 480, 720], 820, 0.45), A('Rend', [0], 900, 1.2)] },
   wraith: { name: 'Wraith', hp: 30, dmg: 9, armor: 0, xp: 13, gold: [4, 9], fly: true, fade: true, blood: '#70d0e0', head: [0.5, 0.25],
-    attacks: [A('Wail', [F(0), F(300), 600], 900), A('Soul Grip', [0, 450], 950, 0.8)] },
+    attacks: [A('Wail', [F(0), F(300), 600], 900), A('Soul Grip', [0, 450], 950, 0.8),
+      A('Soul Brand', [R(0, ['tri', 'zig'])], 900, 1.4)] },
   gargoyle: { name: 'Gargoyle', hp: 50, dmg: 10, armor: 4, xp: 16, gold: [5, 12], blood: '#8a8478', head: [0.5, 0.35],
     attacks: [A('Slam', [0], 1100, 1.6), A('Dive', [F(0), 350], 950)] },
   witch: { name: 'Witch', hp: 30, dmg: 8, armor: 0, xp: 15, gold: [6, 12], blood: '#7ac040', head: [0.4, 0.42],
-    attacks: [A('Hex Volley', [O(0), O(380), O(760)], 1000, 0.7), A('Curse', [F(0), 300], 850)] },
+    attacks: [A('Hex Volley', [O(0), O(380), O(760)], 1000, 0.7), A('Curse', [F(0), 300], 850),
+      A('Witch Mark', [R(0, ['bolt', 'tri', 'bowtie'])], 900, 1.5)] },
   mimic: { name: 'Mimic', hp: 40, dmg: 10, armor: 2, xp: 15, gold: [25, 45], blood: '#8a5a3a', head: [0.5, 0.45],
     attacks: [A('Chomp', [0, 300], 850), A('Lunge', [0], 800, 1.4)] },
   pumpkinKing: { name: 'The Pumpkin King', boss: true, hp: 170, dmg: 10, armor: 2, xp: 60, gold: [60, 90], blood: '#e8822c', head: [0.45, 0.35],
     attacks: [A('Vine Lash', [0, 300, 600], 900, 0.7), A('Seed Barrage', [O(0), O(300), O(600), O(900)], 1100, 0.5),
-      A('Gourd Smash', [F(0), F(300), 650], 950, 1.6), A('Root Grab', [0, 500], 850, 0.9)] },
+      A('Gourd Smash', [F(0), F(300), 650], 950, 1.6), A('Root Grab', [0, 500], 850, 0.9),
+      A("Jack's Hex", [R(0, ['vee', 'tri', 'hook'])], 900, 1.5)] },
   colossus: { name: 'Bone Colossus', boss: true, hp: 290, dmg: 13, armor: 5, xp: 110, gold: [100, 140], blood: '#e8e0c8', head: [0.45, 0.15],
     attacks: [A('Earthquake', [0, 200, 400, 600], 900, 0.5), A('Skull Toss', [O(0), O(450)], 1000, 0.9),
-      A('Crush', [F(0), 400], 1000, 1.8), A('Rib Rattle', [0, 250, F(500), 750], 850, 0.6)] },
+      A('Crush', [F(0), 400], 1000, 1.8), A('Bone Glyph', [R(0, ['zig', 'bowtie']), F(500), F(1100)], 900, 1.6),
+      A('Rib Rattle', [0, 250, F(500), 750], 850, 0.6)] },
   lich: { name: 'Lich Morthos', boss: true, hp: 380, dmg: 15, armor: 3, xp: 200, gold: [150, 220], blood: '#9a58c0', head: [0.38, 0.2],
     attacks: [A('Soul Storm', [O(0), O(250), O(500), O(750), O(1000)], 1000, 0.5), A('Death Grip', [F(0), F(250), 500, 800], 900, 0.8),
-      A('Doom', [0], 1300, 2.2), A('Phantom Blades', [0, 220, 440, F(660), 880], 800, 0.55)] },
+      A('Doom Sigil', [R(0, ['crown', 'bolt', 'bowtie']), O(600, 0.3), O(1200, 0.3)], 1300, 2.0), A('Phantom Blades', [0, 220, 440, F(660), 880], 800, 0.55)] },
 };
 
 export function scaleEnemy(type, depth) {
@@ -188,6 +200,7 @@ export const BLESSINGS = [
   { id: 'thorns', name: 'Thorns', desc: 'Attackers take 4 damage per hit.' },
   { id: 'leech', name: 'Soul Leech', desc: 'Perfect strikes heal 1 HP.' },
   { id: 'bottle', name: 'Bottle Bearer', desc: 'Gain 2 life bottles now.' },
+  { id: 'runic', name: 'Rune Lore', desc: 'Runes last 30% longer and hit 50% harder.' },
 ];
 
 export function pickBlessings(rng, run, n = 3) {

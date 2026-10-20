@@ -10,8 +10,10 @@ floors of graveyards, crypts and a cursed cathedral, then slay Lich Morthos.
 
 ## How to play
 
-**Explore**: tap a tile to walk there. Tap chests, fountains, altars and merchants to use them.
-Enemies wake when they see you and hunt you down turn by turn. Find the stairs to go deeper.
+**Explore**: tap a tile to walk there, or tap **AUTO** to autoexplore (it stops when a new monster shows up, and heads
+for the stairs once the floor is done). Tap chests, fountains, altars and merchants to use them.
+Enemies wake when they see you and hunt you down turn by turn. Found stairs glow with a pillar of gold light
+(an edge arrow points to them when off screen); step on them to go deeper.
 
 **Fight**: battles alternate between two phases.
 - **Strike!** Rings close over targets on the enemy. Tap each target as its ring meets the center.
@@ -21,6 +23,8 @@ Enemies wake when they see you and hunt you down turn by turn. Find the stairs t
     Parry a whole attack to stagger the foe for a bonus strike.
   - **Green orbs** are projectiles. Tap them before they reach you.
   - **Purple skulls** are feints. *Don't* tap them.
+  - **Pink runes** are curses. *Drag* along the glyph before its countdown ends to dispel it and bounce damage back.
+- **Sigils**: land every strike in a turn and a gold rune appears. Trace it for a bonus blast.
 
 **Bottom bar**: swap between up to 3 weapons (each has its own rhythm), drink Life Bottles, or RUN.
 
@@ -31,7 +35,8 @@ Rare, epic and legendary weapons roll affixes like *Flaming*, *Vampiric*, *Keen*
 **Leveling up** offers a choice of 3 blessings (wider timing windows, riposte, thorns, necromancy, cheat death, ...).
 Death is permanent, but the run auto-saves so you can close the tab and continue later.
 
-Keyboard (desktop): arrows/WASD to step, `1` `2` `3` to swap weapons in battle, `Q` to drink, `Esc` for the menu.
+Keyboard (desktop): arrows/WASD to step, `X` to autoexplore, `1` `2` `3` to swap weapons in battle, `Q` to drink, `Esc` for the menu.
+Runes are drawn by dragging with the mouse.
 
 ## Tech
 
@@ -43,8 +48,9 @@ Keyboard (desktop): arrows/WASD to step, `1` `2` `3` to swap weapons in battle, 
 | File | What it does |
 | --- | --- |
 | `src/engine.js` | canvas scaling, main loop, input, scene transitions |
-| `src/explore.js` | isometric dungeon scene, FOV, pathfinding, turns, shops and dialogs |
+| `src/explore.js` | isometric dungeon scene, FOV, pathfinding, autoexplore, turns, shops and dialogs |
 | `src/combat.js` | the tap-timing battle system |
+| `src/runes.js` | rune glyphs and the stroke matcher used for tracing them |
 | `src/dungeon.js` | procedural floor generation |
 | `src/data.js` | weapons, affixes, enemies, bosses, blessings, balance formulas |
 | `src/ui.js`, `src/font.js` | pixel UI kit and a 3x5 bitmap font |

@@ -1,5 +1,8 @@
 // Guide, list, item, object and location pages.
-import { THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, scaleEnemy, xpNeed, weaponStats } from '../src/data.js';
+import {
+  THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, SIGIL_TIME, scaleEnemy, xpNeed, weaponStats,
+} from '../src/data.js';
+import { RUNES } from '../src/runes.js';
 import { SPR, weaponIcon } from '../src/sprites.js';
 import {
   ORDER, BOSSES, WORDER, PAGE_OF, WPAGE, THEME_PAGE, floorsOfTheme, goldAt, xpAt, firstAvail, spawnTable, fmtFloors,
@@ -68,14 +71,15 @@ ${h2('Your first fight')}<p>When a monster reaches you (or you walk into it), a 
 ${h2('Defending')}<p>On the <b>monster's turn</b> marks appear around your hero:</p>
 <ul><li>${chip('guard', 'Shield')}: tap on time to <b>parry</b> (no damage, plus a counter-attack) or <b>block</b> (60% less damage).</li>
 <li>${chip('orb', 'Orb')}: a projectile. Tap it before it hits you.</li>
-<li>${chip('feint', 'Skull')}: a feint. <b>Don't tap it!</b></li></ul>
+<li>${chip('feint', 'Skull')}: a feint. <b>Don't tap it!</b></li>
+<li>${chip('rune', 'Rune')}: a curse glyph. <b>Drag</b> your finger (or mouse) along it, starting at the white dot, before the countdown runs out.</li></ul>
 ${h2('Between fights')}<p>Winning gives ${link('Experience', 'experience')} and ${link('Coins', 'coins')}. Each level-up lets you choose one of three ${link('Blessings')}. Drink ${link('Life_Bottle', 'Life Bottles')} from the bottom bar, swap weapons, and spend coins at the ${link('Merchant')} on floor 3.</p>
 ${h2('Dying')}<p>Death is permanent: the run ends and you start again from floor 1. The game autosaves, so you can close the tab and continue later. Your best floor is recorded on the title screen.</p>
 ${guideNav()}`, ['Guides'], 'tutorial beginner new');
 
   // ---------- Combat ----------
   page('Combat', 'Combat', () => `
-${toc(['Overview', 'Your turn: striking', 'Enemy turn: defending', 'Combo', 'The bottom bar', 'Winning and fleeing'])}
+${toc(['Overview', 'Your turn: striking', 'Enemy turn: defending', 'Runes', 'Combo', 'The bottom bar', 'Winning and fleeing'])}
 ${h2('Overview')}<p>Combat in Tapfighter is a turn-based rhythm game. You always attack first. Each <b>turn</b> is a short sequence of timed marks. When every mark of a turn has been resolved, the other side's turn begins after about half a second.</p>
 ${h2('Your turn: striking')}<p>Your equipped weapon decides how many <b>strike targets</b> appear (its <i>strikes</i>), how long each ring takes to close (<i>ring time</i>) and the spacing between them (<i>gap</i>). Tap a target as its ring closes:</p>
 ${table(['Result', 'Condition', 'Effect'], [
@@ -91,9 +95,16 @@ ${table(['Mark', 'What to do', 'Perfect', 'Good', 'Missed'], [
     [chip('guard', 'Shield'), 'Tap as the ring closes', 'PARRY: no damage, counter-attack for 60% of your weapon damage (ignores armour)', 'BLOCK: take 40% damage', 'Full damage, combo reset'],
     [chip('orb', 'Orb'), 'Tap the orb at any time while it flies', 'SMASH: no damage, +1 combo', '(no timing)', 'Full damage'],
     [chip('feint', 'Skull'), '<b>Do not tap</b>', '', '', 'Tapping it: 60% damage and combo reset'],
+    [chip('rune', 'Rune'), '<b>Drag</b> to trace the glyph before the countdown ends', 'PERFECT DISPEL: backlash for 90% of the curse', 'DISPELLED: backlash for 60% of the curse (ignores armour)', 'CURSED: full damage, combo reset'],
   ], { sortable: false })}
 <p>Parry <b>every</b> shield in a single attack and the monster is <b>staggered</b>: you get <b>+1 strike</b> on your next turn. See ${link('Status_effects', 'Status effects')}.</p>
-${h2('Combo')}<p>Every successful strike, parry and orb smash adds 1 to your combo. Each point adds 6% damage to strikes (up to +100% at 17 combo). Misses, whiffs, feint taps and unblocked hits reset it. The ${link('Blessings', 'Combo Master')} blessing increases the bonus.</p>
+${h2('Runes')}<p>Runes are the fourth combat skill: instead of tapping, you <b>draw</b>. A rune appears as a large glowing glyph in the middle of the arena with a ring of countdown dots around it. Press anywhere that is not another mark and drag along the glyph in one stroke. The white dot and arrow show where to start; either direction works, and closed glyphs (Triangle, Hourglass) can start at any corner. Size and position don't need to be exact, only the shape.</p>
+<p>A sloppy trace <b>FIZZLES</b>, which costs nothing: try again until the countdown ends. Taps never count as a trace, so you can still smash orbs that fly in while you draw.</p>
+<p>${Object.values(RUNES).map(r => `<span class="rune-glyph"><svg viewBox="-2 -2 14 14" width="44" height="44" aria-hidden="true"><polyline points="${r.pts.map(([x, y]) => `${(x * 10).toFixed(1)},${(y * 10).toFixed(1)}`).join(' ')}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${(r.pts[0][0] * 10).toFixed(1)}" cy="${(r.pts[0][1] * 10).toFixed(1)}" r="1.2" fill="currentColor"/></svg>${r.name}</span>`).join('')}</p>
+<ul><li><b>Curses</b> (pink) are enemy attacks. You get <b>${RUNE_TIME / 1000}s</b> to trace them (15% less against an enraged boss). Dispelling one bounces part of the curse back at the caster, ignoring armour.</li>
+<li><b>Sigils</b> (gold) are yours. Land <b>every</b> strike in a turn (a <b>FLAWLESS</b> turn) and a random sigil appears for <b>${SIGIL_TIME / 1000}s</b>. Tracing it fires a blast for 125% of your weapon damage (×1.5 if perfect), boosted by combo and ignoring armour. Letting it fade costs nothing.</li>
+<li>The ${link('Blessings', 'Rune Lore')} blessing makes runes last 30% longer and hit 50% harder.</li></ul>
+${h2('Combo')}<p>Every successful strike, parry, orb smash and rune adds 1 to your combo. Each point adds 6% damage to strikes (up to +100% at 17 combo). Misses, whiffs, feint taps and unblocked hits reset it. The ${link('Blessings', 'Combo Master')} blessing increases the bonus.</p>
 ${h2('The bottom bar')}<ul>
 <li><b>Weapon slots</b>: swapping before any strike of your turn has been tapped restarts the turn with the new weapon for free. Swapping after that ends your turn. Swapping during the enemy turn is free.</li>
 <li><b>${link('Life_Bottle', 'Life Bottle')}</b>: heals 40% of max HP. Drinking on your turn ends that turn, so drink during the enemy's turn when you can.</li>
@@ -173,7 +184,8 @@ ${guideNav()}`, ['Guides', 'Mechanics'], 'burn bleed stun');
     const map = minimap(THEMES[0], 4, 7331);
     return `
 <div class="figure right">${map}<div>A generated Boneyard floor. ${legend()}</div></div>
-${toc(['Turns', 'Sight', 'Monster behaviour', 'What is on a floor'])}
+${toc(['Autoexplore', 'Turns', 'Sight', 'Monster behaviour', 'What is on a floor'])}
+${h2('Autoexplore')}<p>Tap <b>AUTO</b> in the bottom bar (or press X) and Sir Rattlebone walks himself to the nearest unexplored area, picking up coins and Life Bottles and opening chests on the way. He drinks from a ${link('Fountain')} only when below 60% HP. Autoexplore stops when a new monster comes into view, when a battle starts, or when you tap anywhere. Once the floor is fully explored he walks to the ${link('Stairs')} and asks whether to descend.</p>
 ${h2('Turns')}<p>The dungeon is turn-based. Every step you take is one turn, after which every monster acts. Diagonal steps are allowed but cannot cut around wall corners. Standing still does not pass time.</p>
 ${h2('Sight')}<p>You see up to <b>7 tiles</b> in a circle, blocked by walls. Tiles you have seen stay on the map (darkened) once out of sight. Monsters are only shown while you can see them.</p>
 ${h2('Monster behaviour')}<ul>
@@ -263,7 +275,7 @@ ${weaponNav()}`, ['Weapons'], 'legendary epic rare common');
   const bnotes = {
     vigor: 'Stacks.', steady: 'Stacks.', keen: 'Stacks.', brutal: 'Stacks additively (+20% each).', riposte: 'Extra copies have no effect.',
     guard: 'Max 2 stacks (block 60% → 75% → 90%).', alchemy: 'Stacks.', greed: 'Stacks.', necro: 'Stacks.', combo: 'Stacks.',
-    undying: 'Each stack is one revive at 30% HP.', thorns: 'Stacks; also triggers on blocked hits.', leech: 'Stacks.', bottle: 'Instant.',
+    undying: 'Each stack is one revive at 30% HP.', thorns: 'Stacks; also triggers on blocked hits.', leech: 'Stacks.', bottle: 'Instant.', runic: 'Stacks.',
   };
   page('Blessings', 'Blessings', () => `
 <p>Each time you <b>level up</b> you gain +4 max HP and choose one of <b>three random blessings</b>. Blessings also come from ${link('Bone_Altar', 'Bone Altars')} and ${link('Blessing_Scroll', 'Blessing Scrolls')}. All blessings last for the rest of the run.</p>
@@ -323,7 +335,7 @@ ${note(`From floor 3, 15% of chests are ${mlink('mimic')}s. There is no visual t
     `<p>A fountain of restorative water. Use it once to heal half your max HP. The water sparkles while it is unused. Best saved until you are actually hurt, ideally just before taking the stairs to a boss floor.</p>`, ['Objects']);
   page('Bone_Altar', 'Bone Altar', () => infobox({ title: 'Bone Altar', image: img(SPR.altar, 5), sections: [{ head: 'Info', rows: [['Chance', '30% per floor (floor 2+)'], ['Cost', '15% of max HP (min 5)'], ['Reward', 'Choose 1 of 3 blessings']] }] }) +
     `<p>A grim altar that permanently takes <b>15% of your max HP</b> in exchange for a ${link('Blessings', 'blessing')}. You cannot offer if it would leave you below 10 max HP. Usually worth it early, when blessings compound for many floors.</p>`, ['Objects']);
-  page('Stairs', 'Stairs', () => `<p>${img(getTiles(THEMES[0]).stairs, 4)}</p><p>Each floor has one staircase, placed in the room farthest from where you arrive. Step onto it to be asked whether to descend. On boss floors the stairs only appear once the boss is destroyed. You cannot return to a previous floor.</p>`, ['Objects']);
+  page('Stairs', 'Stairs', () => `<p>${img(getTiles(THEMES[0]).stairs, 4)}</p><p>Each floor has one staircase, placed in the room farthest from where you arrive. Found stairs are marked by a pillar of gold light, and an arrow at the screen edge points to them when they are off screen (tap it to walk there). Step onto them to be asked whether to descend; if you choose to stay, a <b>DESCEND</b> button appears while you stand on them. On boss floors the stairs only appear once the boss is destroyed. You cannot return to a previous floor.</p>`, ['Objects']);
 
   // ---------- Locations ----------
   const regionPage = (i) => {
@@ -370,6 +382,8 @@ ${h2('Growth')}<p>He gains +4 max HP per level (see ${link('Experience')}), plus
     ['Walk', 'Tap a tile', 'Arrow keys / WASD (one step)'],
     ['Use chest, merchant, etc.', 'Tap it', '-'],
     ['Strike / parry / smash', 'Tap the mark', '-'],
+    ['Trace a rune', 'Drag along the glyph', 'Drag with the mouse'],
+    ['Autoexplore', 'AUTO button (tap again or anywhere to stop)', 'X'],
     ['Swap weapon', 'Tap a weapon slot', '1, 2, 3 (in battle)'],
     ['Drink Life Bottle', 'Tap the bottle', 'Q (in battle)'],
     ['Weapon details', 'Tap the equipped weapon (map)', '-'],
@@ -378,6 +392,7 @@ ${h2('Growth')}<p>He gains +4 max HP per level (see ${link('Experience')}), plus
 
   // ---------- Update history ----------
   page('Update_history', 'Update history', () => table(['Date', 'Update'], [
+    ['20 October 2026', '<b>Runes, autoexplore and stair beacons.</b> Some monsters now cast <b>rune curses</b> you dispel by tracing the glyph, and flawless strike turns earn a <b>sigil</b> to trace for a bonus blast. New blessing: Rune Lore. An <b>AUTO</b> button explores the floor for you, and stairs are now marked with a light pillar, an off-screen pointer and a DESCEND button.'],
     ['20 October 2026', `<b>The Tapfighter Wiki</b> launches, with a WIKI button on the title screen and in the pause menu.`],
     ['20 October 2026', '<b>Tapfighter released.</b> 15 floors across 3 regions, 10 monsters, 3 bosses, 10 weapons, 7 affixes and 14 blessings.'],
   ], { sortable: false }), [], 'changelog patch');
