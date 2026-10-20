@@ -15,16 +15,19 @@ for the stairs once the floor is done). Tap chests, fountains, altars and mercha
 Enemies wake when they see you and hunt you down turn by turn. Found stairs glow with a pillar of gold light
 (an edge arrow points to them when off screen); step on them to go deeper.
 
-**Fight**: battles alternate between two phases.
-- **Strike!** Rings close over targets on the enemy. Tap each target as its ring meets the center.
+**Fight**: battles are played with two thumbs at once, and get faster the deeper you go.
+- **Strike (right thumb)**: rings close over targets on the enemy, volley after volley. Tap each target as its ring meets the center.
   *Perfect* hits do 150% damage, ★ targets are critical weak points, and consecutive hits build a combo multiplier.
-- **Defend!** The enemy attacks:
+- **Defend (left thumb)**: at the same time, the enemy attacks around your hero:
   - **Shields** appear around you. Tap them on time to *parry* (no damage plus a counter-attack) or *block* (reduced damage).
     Parry a whole attack to stagger the foe for a bonus strike.
   - **Green orbs** are projectiles. Tap them before they reach you.
   - **Purple skulls** are feints. *Don't* tap them.
   - **Pink runes** are curses. *Drag* along the glyph before its countdown ends to dispel it and bounce damage back.
-- **Sigils**: land every strike in a turn and a gold rune appears. Trace it for a bonus blast.
+- **Sigils**: land every strike in a volley and a gold rune appears. Trace it for a bonus blast.
+  Runes pause both sides, so you trace them one-handed.
+- **Rhythm duels**: Bone Bards and Banshees fight with music, and every boss plays an encore at half health.
+  Notes fall down four lanes; tap each lane as its note hits the line. Chords take both thumbs.
 
 **Bottom bar**: swap between up to 3 weapons (each has its own rhythm), drink Life Bottles, or RUN.
 
@@ -49,8 +52,9 @@ Runes are drawn by dragging with the mouse.
 | --- | --- |
 | `src/engine.js` | canvas scaling, main loop, input, scene transitions |
 | `src/explore.js` | isometric dungeon scene, FOV, pathfinding, autoexplore, turns, shops and dialogs |
-| `src/combat.js` | the tap-timing battle system |
+| `src/combat.js` | the two-thumb battle system (concurrent strike/defend streams, runes, rhythm duels) |
 | `src/runes.js` | rune glyphs and the stroke matcher used for tracing them |
+| `src/rhythm.js` | procedural four-lane songs for rhythm duels |
 | `src/dungeon.js` | procedural floor generation |
 | `src/data.js` | weapons, affixes, enemies, bosses, blessings, balance formulas |
 | `src/ui.js`, `src/font.js` | pixel UI kit and a 3x5 bitmap font |

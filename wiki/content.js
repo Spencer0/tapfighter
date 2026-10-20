@@ -1,6 +1,6 @@
 // Wiki page content. Stats are computed from ../src/data.js; prose is hand-written.
 import {
-  THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, scaleEnemy, xpNeed, weaponStats,
+  THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, scaleEnemy, xpNeed, weaponStats, tempoAt,
 } from '../src/data.js';
 import { RUNES } from '../src/runes.js';
 import { SPR, weaponIcon } from '../src/sprites.js';
@@ -19,12 +19,12 @@ export const SIDEBAR = [
 ];
 
 // ---------- derived data ----------
-const ORDER = ['zombie', 'skeleton', 'bat', 'imp', 'pumpkin', 'ghoul', 'wraith', 'gargoyle', 'witch', 'mimic'];
+const ORDER = ['zombie', 'skeleton', 'bat', 'imp', 'pumpkin', 'bard', 'ghoul', 'wraith', 'gargoyle', 'witch', 'banshee', 'mimic'];
 const BOSSES = ['pumpkinKing', 'colossus', 'lich'];
 const WORDER = ['sword', 'dagger', 'drumstick', 'club', 'spear', 'broad', 'axe', 'staff', 'hammer', 'crossbow'];
 const PAGE_OF = {
   zombie: 'Zombie', skeleton: 'Skeleton', bat: 'Giant_Bat', imp: 'Imp', pumpkin: 'Pumpkin_Knight', ghoul: 'Ghoul', wraith: 'Wraith',
-  gargoyle: 'Gargoyle', witch: 'Witch', mimic: 'Mimic', pumpkinKing: 'The_Pumpkin_King', colossus: 'Bone_Colossus', lich: 'Lich_Morthos',
+  gargoyle: 'Gargoyle', witch: 'Witch', mimic: 'Mimic', bard: 'Bone_Bard', banshee: 'Banshee', pumpkinKing: 'The_Pumpkin_King', colossus: 'Bone_Colossus', lich: 'Lich_Morthos',
 };
 const WPAGE = Object.fromEntries(Object.entries(WEAPONS).map(([k, w]) => [k, w.name.replace(/ /g, '_')]));
 const THEME_PAGE = { graveyard: 'Boneyard', crypt: 'Crypts', cathedral: 'Cursed_Cathedral' };
@@ -104,6 +104,16 @@ const MON = {
     strat: '<i>Hex Volley</i> fires <b>three orbs</b>. They arc across the screen, so tap them early in flight rather than waiting for them to reach you. <i>Curse</i> is a feint followed by a shield. <i>Witch Mark</i> is a hard-hitting <b>rune</b> (Bolt, Triangle or Hourglass): trace it calmly, a failed trace can be retried until the countdown runs out. Witches have low HP, so rush them down with multi-hit weapons.',
     trivia: 'The witch carries her broom into battle but never rides it.',
   },
+  bard: {
+    intro: 'skeletal minstrels who still think the Boneyard is their stage. They do not fight with blades: they challenge you to a <b>rhythm duel</b>.',
+    strat: 'The whole battle is a four-lane song. Tap each lane as its note crosses the line; every hit damages the Bard (ignoring armour) and every miss costs you a little health. Songs repeat, each verse a little faster and denser, until one of you falls. The Graveside Ballad is slow and rarely asks for chords, so it is the place to learn the lanes before Banshees and boss encores.',
+    trivia: 'Each note you hit plays its pitch, so a clean run plays the Bard\'s tune for him.',
+  },
+  banshee: {
+    intro: 'shrieking spirits of the Cursed Cathedral. Like the Bone Bard they duel with music, but their Wailing Requiem is faster and full of <b>chords</b>.',
+    strat: 'Chords are two notes joined by a bar, always one on each side: hit them with both thumbs together. Keep your thumbs resting over the two halves rather than chasing notes with one finger. A Banshee hits harder than a Bard, so a sloppy duel is costly; a Life Bottle drunk mid-song does not interrupt the music.',
+    trivia: 'Banshees are the only rhythm duellists that fly.',
+  },
   mimic: {
     intro: 'monsters disguised as treasure chests. From floor 3 onward, <b>15% of chests</b> are Mimics.',
     strat: 'There is no way to tell a Mimic from a real chest before opening it. Opening one starts a fight immediately, and you cannot get the first strike. It hits hard (<i>Lunge</i> does 140%) and has 2 armour, but it pays out <b>25-45 coins</b> (more on deeper floors), far more than any other regular monster. If you are low on health, skipping chests on deeper floors is a legitimate choice.',
@@ -146,9 +156,9 @@ export function buildPages(H) {
     ` +${h.t}ms` + (h.mul ? ` ×${Math.round(h.mul * 100)}%` : '');
 
   const bestiaryNav = () => navbox('Monsters of Tapfighter', [
-    ['Boneyard', ['zombie', 'skeleton', 'bat', 'imp', 'pumpkin'].map(mlink)],
-    ['Crypts', ['skeleton', 'ghoul', 'bat', 'zombie', 'wraith', 'pumpkin'].map(mlink)],
-    ['Cursed Cathedral', ['gargoyle', 'witch', 'wraith', 'imp', 'ghoul', 'pumpkin'].map(mlink)],
+    ['Boneyard', ['zombie', 'skeleton', 'bat', 'imp', 'pumpkin', 'bard'].map(mlink)],
+    ['Crypts', ['skeleton', 'ghoul', 'bat', 'zombie', 'wraith', 'pumpkin', 'bard'].map(mlink)],
+    ['Cursed Cathedral', ['gargoyle', 'witch', 'wraith', 'imp', 'ghoul', 'pumpkin', 'banshee'].map(mlink)],
     ['Chests', [mlink('mimic')]],
     ['Bosses', BOSSES.map(mlink)],
   ]);
@@ -186,7 +196,8 @@ export function buildPages(H) {
     const traits = [];
     if (d.fly) traits.push('Flying');
     if (d.fade) traits.push('Spectral (marks fade in late)');
-    if (isBoss) traits.push('Boss: fixed attack rotation, enrages below 50% HP');
+    if (d.rhythm) traits.push('Rhythm duel');
+    if (isBoss) traits.push('Boss: fixed attack rotation, enrages and plays an encore below 50% HP');
     const ib = infobox({
       title: d.name, image: img(SPR[t], isBoss ? 4 : 5, d.name),
       sections: [
@@ -198,7 +209,7 @@ export function buildPages(H) {
         ] },
         { head: `Combat stats (floor ${first})`, rows: [
           ['Hitpoints', s.hp], ['Base damage', s.dmg], ['Armour', s.armor],
-          ['Attacks', d.attacks.length], ['Experience', xpAt(t, first)],
+          d.rhythm ? ['Song', d.rhythm.song] : ['Attacks', d.attacks.length], ['Experience', xpAt(t, first)],
           ['Coins', goldAt(t, first).join('-')],
         ] },
       ],
@@ -208,9 +219,16 @@ export function buildPages(H) {
       floors.map(f => { const x = scaleEnemy(t, f); return [f, x.hp, x.dmg, x.armor, xpAt(t, f), goldAt(t, f).join('-')]; }));
     const plural = d.name.endsWith('h') ? 'es' : 's';
     let body = ib + `<p><b>${d.name}</b>${isBoss ? ' is' : plural + ' are'} ${MON[t].intro}</p>`;
+    const songInfo = (cfg, f) => table(['Song', 'Tempo (floor ' + f + ')', 'Notes per beat', 'Chord chance'], [[`<b>${cfg.song}</b>`,
+      `${Math.round(cfg.bpm * tempoAt(f))} BPM`, `${Math.round(Math.min(0.9, cfg.density + 0.015 * f) * 100)}%`, `${Math.round(Math.min(0.5, cfg.chords + 0.012 * f) * 100)}%`]], { sortable: false });
+    if (d.rhythm) {
+      body += h2('Rhythm duel') + `<p>The ${d.name} has no attacks. The whole battle is a <b>rhythm duel</b>: notes fall down four lanes and you tap each lane as its note reaches the line. A hit deals 20% of your weapon damage (×1.5 if Perfect, ignoring armour); a miss hurts you for ${Math.max(1, Math.round(s.dmg * 0.25))} on floor ${first}. Each verse is 5% faster and denser than the last. See ${link('Combat')}.</p>` + songInfo(d.rhythm, first);
+    } else {
     body += h2('Attacks');
     body += `<p>${isBoss ? `Bosses use their attacks in a <b>fixed rotation</b>, starting from the top of this table and looping.` : `Each turn the ${d.name} picks one of these attacks at random.`} ${chip('guard', 'Shield')} = tap on time to parry; ${chip('feint', 'Skull')} = feint, do <b>not</b> tap; ${chip('orb', 'Orb')} = projectile, tap to smash; ${chip('rune', 'Rune')} = curse, drag to trace the glyph before it lands (${RUNE_TIME / 1000}s). Rune ring time is the trace window, not the attack's. See ${link('Combat')} for details.</p>`;
     body += attackTable(t, first);
+    }
+    if (d.encore) body += h2('Encore') + `<p>The first time it drops below half health, ${d.name} stops fighting and plays a ten-bar <b>rhythm encore</b> before the battle resumes (enraged). See ${link('Combat')}.</p>` + songInfo(d.encore, first);
     if (isBoss) body += note(`<b>Enrage:</b> below 50% HP (${Math.ceil(s.hp / 2)} HP on floor ${first}) every ring closes <b>15% faster</b> and the gaps between hits shrink by the same amount.`, true);
     if (!isBoss) {
       body += h2('Strategy') + `<p>${MON[t].strat}</p>`;

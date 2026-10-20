@@ -4,7 +4,7 @@ import { unlock } from './audio.js';
 export const G = {
   W: 240, H: 400, scale: 1, dpr: 1, safeTop: 0, safeBottom: 0,
   time: 0, frameNow: 0, scene: null, hits: [], modalIndex: -1,
-  shake: 0, flash: null, trans: null, press: null, pointer: null,
+  shake: 0, flash: null, trans: null, press: null, pointers: new Set(), tapId: null,
 };
 
 const canvas = document.getElementById('game');
@@ -138,21 +138,22 @@ export function start(first) {
     unlock();
     try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
     const [x, y] = toLogical(e);
-    G.pointer = { id: e.pointerId, down: true };
+    // Every finger is tracked on its own so two thumbs (or a drag plus a tap) don't interfere.
+    G.pointers.add(e.pointerId);
+    G.tapId = e.pointerId;
     dispatchTap(x, y);
   }, { passive: false });
-  // Drags (rune drawing) go to the scene as a stream of points after the initial tap.
+  // Drags (rune drawing) go to the scene as a stream of points tagged with the pointer id.
   canvas.addEventListener('pointermove', e => {
-    if (!G.pointer || G.pointer.id !== e.pointerId) return;
+    if (!G.pointers.has(e.pointerId)) return;
     e.preventDefault();
     const [x, y] = toLogical(e);
-    G.scene?.onDrag?.(x, y);
+    G.scene?.onDrag?.(x, y, e.pointerId);
   }, { passive: false });
   const release = e => {
-    if (!G.pointer || G.pointer.id !== e.pointerId) return;
-    G.pointer = null;
+    if (!G.pointers.delete(e.pointerId)) return;
     const [x, y] = toLogical(e);
-    G.scene?.onRelease?.(x, y);
+    G.scene?.onRelease?.(x, y, e.pointerId);
   };
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);

@@ -110,6 +110,21 @@ export function sfx(name) {
   }
 }
 
+// Rhythm duels: a pitched pluck for hit notes and a simple kit on the beat.
+export function tone(midi, vol = 0.12) {
+  if (!ac || !settings.sfx) return;
+  const t = ac.currentTime;
+  osc('square', mf(midi), null, t, 0.22, vol * 0.5);
+  osc('triangle', mf(midi), null, t, 0.35, vol);
+}
+export function drum(kind) {
+  if (!ac || !settings.sfx) return;
+  const t = ac.currentTime;
+  if (kind === 'kick') { osc('sine', 150, 45, t, 0.18, 0.35); noise(t, 0.05, 0.12, 300, 'lowpass'); }
+  else if (kind === 'snare') noise(t, 0.12, 0.22, 2200);
+  else noise(t, 0.03, 0.06, 8000, 'highpass');
+}
+
 // ---------- Music ----------
 // Each track: bpm, stepsPerBar (eighth notes), bars [{bass, chord, mel}], voice style.
 const DM = [62, 65, 69], AM = [61, 64, 69], GM = [62, 67, 70], BB = [62, 65, 70];

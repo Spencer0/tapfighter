@@ -7,7 +7,7 @@ export const THEMES = [
     wallTop: '#727a6c', wallL: '#2e3234', wallR: '#464c4c', mortar: '#202426', moss: '#4a6a3a',
     sky: ['#0b0818', '#1c1638', '#33285a', '#4a3a6a'], ground: '#22341e', groundLine: '#2e4428',
     block: ['grave', 'grave', 'cross', 'tree', 'grave'], flat: ['bones', 'skull', 'tuft', 'tuft', 'tuft', 'pumpkinlamp'],
-    enemies: [['zombie', 1, 5], ['skeleton', 1, 4], ['bat', 1, 3], ['imp', 2, 2], ['pumpkin', 3, 2]],
+    enemies: [['zombie', 1, 5], ['skeleton', 1, 4], ['bat', 1, 3], ['imp', 2, 2], ['pumpkin', 3, 2], ['bard', 3, 1]],
     boss: 'pumpkinKing', mote: '#c8e0a0',
   },
   {
@@ -16,7 +16,7 @@ export const THEMES = [
     wallTop: '#7e6e5e', wallL: '#2e2420', wallR: '#4a3a30', mortar: '#1e1814', moss: '#5a4a3a',
     sky: ['#08060c', '#14101a', '#201a28', '#2c2234'], ground: '#2a242a', groundLine: '#3a323a',
     block: ['coffin', 'pillar', 'urn', 'coffin'], flat: ['bones', 'skull', 'crack', 'crack', 'bones'],
-    enemies: [['skeleton', 1, 4], ['ghoul', 1, 4], ['bat', 1, 2], ['zombie', 1, 2], ['wraith', 7, 3], ['pumpkin', 6, 1]],
+    enemies: [['skeleton', 1, 4], ['ghoul', 1, 4], ['bat', 1, 2], ['zombie', 1, 2], ['wraith', 7, 3], ['pumpkin', 6, 1], ['bard', 1, 2]],
     boss: 'colossus', mote: '#e0c890',
   },
   {
@@ -25,7 +25,7 @@ export const THEMES = [
     wallTop: '#8a7a9a', wallL: '#2a2238', wallR: '#40345a', mortar: '#1a1426', moss: '#6a5a7a',
     sky: ['#0a0612', '#1a0e26', '#2a1440', '#3a1e54'], ground: '#241c2e', groundLine: '#3a2e48',
     block: ['pillar', 'statue', 'pillar', 'urn'], flat: ['skull', 'crack', 'bones'],
-    enemies: [['gargoyle', 1, 4], ['witch', 1, 4], ['wraith', 1, 3], ['imp', 1, 2], ['ghoul', 1, 2], ['pumpkin', 1, 1]],
+    enemies: [['gargoyle', 1, 4], ['witch', 1, 4], ['wraith', 1, 3], ['imp', 1, 2], ['ghoul', 1, 2], ['pumpkin', 1, 1], ['banshee', 1, 2]],
     boss: 'lich', mote: '#d0a0f0', checker: true,
   },
 ];
@@ -136,6 +136,12 @@ const F = t => ({ t, type: 'feint' });
 const O = (t, mul) => ({ t, type: 'orb', mul });
 const R = (t, runes) => ({ t, type: 'rune', runes });
 
+// Battles run both sides at once; everything speeds up with depth (ring times, gaps, rests, songs).
+export const tempoAt = depth => Math.min(1.5, 1 + 0.03 * (depth - 1));
+export const HERO_REST = 450; // ms between your strike volleys (before tempo)
+export const FOE_REST = 750; // ms between enemy attacks (before tempo)
+export const DOT_TICK = 2500; // ms between burn/bleed ticks
+
 export const RUNE_TIME = 2300; // ms to trace an enemy curse rune
 export const SIGIL_TIME = 1900; // ms to trace your own sigil after a flawless turn
 export const runeTime = (run, base) => Math.round(base * (1 + 0.3 * (run.bless.runic || 0)));
@@ -162,17 +168,25 @@ export const ENEMIES = {
   witch: { name: 'Witch', hp: 30, dmg: 8, armor: 0, xp: 15, gold: [6, 12], blood: '#7ac040', head: [0.4, 0.42],
     attacks: [A('Hex Volley', [O(0), O(380), O(760)], 1000, 0.7), A('Curse', [F(0), 300], 850),
       A('Witch Mark', [R(0, ['bolt', 'tri', 'bowtie'])], 900, 1.5)] },
+  // Rhythm monsters fight with a song instead of attacks: notes fall down four lanes.
+  bard: { name: 'Bone Bard', hp: 40, dmg: 7, armor: 0, xp: 12, gold: [6, 12], blood: '#e8e0c8', head: [0.4, 0.15], attacks: [],
+    rhythm: { song: 'Graveside Ballad', bpm: 104, density: 0.55, chords: 0.08 } },
+  banshee: { name: 'Banshee', hp: 50, dmg: 10, armor: 0, xp: 17, gold: [7, 14], fly: true, blood: '#c8e0f0', head: [0.5, 0.2], attacks: [],
+    rhythm: { song: 'Wailing Requiem', bpm: 124, density: 0.6, chords: 0.22 } },
   mimic: { name: 'Mimic', hp: 40, dmg: 10, armor: 2, xp: 15, gold: [25, 45], blood: '#8a5a3a', head: [0.5, 0.45],
     attacks: [A('Chomp', [0, 300], 850), A('Lunge', [0], 800, 1.4)] },
   pumpkinKing: { name: 'The Pumpkin King', boss: true, hp: 170, dmg: 10, armor: 2, xp: 60, gold: [60, 90], blood: '#e8822c', head: [0.45, 0.35],
+    encore: { song: 'Harvest Hoedown', bpm: 112, density: 0.6, chords: 0.12 },
     attacks: [A('Vine Lash', [0, 300, 600], 900, 0.7), A('Seed Barrage', [O(0), O(300), O(600), O(900)], 1100, 0.5),
       A('Gourd Smash', [F(0), F(300), 650], 950, 1.6), A('Root Grab', [0, 500], 850, 0.9),
       A("Jack's Hex", [R(0, ['vee', 'tri', 'hook'])], 900, 1.5)] },
   colossus: { name: 'Bone Colossus', boss: true, hp: 290, dmg: 13, armor: 5, xp: 110, gold: [100, 140], blood: '#e8e0c8', head: [0.45, 0.15],
+    encore: { song: 'March of the Ribcage', bpm: 120, density: 0.65, chords: 0.2 },
     attacks: [A('Earthquake', [0, 200, 400, 600], 900, 0.5), A('Skull Toss', [O(0), O(450)], 1000, 0.9),
       A('Crush', [F(0), 400], 1000, 1.8), A('Bone Glyph', [R(0, ['zig', 'bowtie']), F(500), F(1100)], 900, 1.6),
       A('Rib Rattle', [0, 250, F(500), 750], 850, 0.6)] },
   lich: { name: 'Lich Morthos', boss: true, hp: 380, dmg: 15, armor: 3, xp: 200, gold: [150, 220], blood: '#9a58c0', head: [0.38, 0.2],
+    encore: { song: 'Danse Macabre', bpm: 132, density: 0.7, chords: 0.3 },
     attacks: [A('Soul Storm', [O(0), O(250), O(500), O(750), O(1000)], 1000, 0.5), A('Death Grip', [F(0), F(250), 500, 800], 900, 0.8),
       A('Doom Sigil', [R(0, ['crown', 'bolt', 'bowtie']), O(600, 0.3), O(1200, 0.3)], 1300, 2.0), A('Phantom Blades', [0, 220, 440, F(660), 880], 800, 0.55)] },
 };

@@ -1,7 +1,9 @@
 // Guide, list, item, object and location pages.
 import {
   THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, SIGIL_TIME, scaleEnemy, xpNeed, weaponStats,
+  tempoAt, HERO_REST, FOE_REST, DOT_TICK,
 } from '../src/data.js';
+import { RHYTHM_PERFECT, RHYTHM_GOOD } from '../src/rhythm.js';
 import { RUNES } from '../src/runes.js';
 import { SPR, weaponIcon } from '../src/sprites.js';
 import {
@@ -27,7 +29,7 @@ export function addGuidePages(H, page, P, X) {
       `The ${wlink('drumstick')} has the widest timing windows of any weapon in the game.`,
       `${mlink('mimic')}s hide in 15% of chests from floor 3 onward.`,
       `Bosses always use their attacks in the same order. Learn the rotation! See ${link('Bosses', 'Boss guide')}.`,
-      `Parrying every shield in an enemy attack <b>staggers</b> it, giving you an extra strike next turn.`,
+      `Parrying every shield in an enemy attack <b>staggers</b> it, adding an extra strike to your next volley.`,
       `${mlink('wraith')}s hide their marks until the last moment.`,
       `A Perfect ${wlink('hammer')} hit always stuns. Skilled players can stop a monster from ever attacking.`,
     ];
@@ -66,49 +68,63 @@ export function addGuidePages(H, page, P, X) {
 ${toc(['Your hero', 'Moving around', 'Your first fight', 'Defending', 'Between fights', 'Dying'])}
 ${h2('Your hero')}<p>You play ${link('Sir_Rattlebone', 'Sir Rattlebone')}, a skeleton knight raised by the ${mlink('lich')}. You start with <b>50 HP</b>, a ${wlink('sword')}, a ${wlink('dagger')} and <b>2</b> ${link('Life_Bottle', 'Life Bottles')}.</p>
 ${h2('Moving around')}<p>Tap any tile you have seen to walk there; the hero pathfinds around walls. Each step is one <b>turn</b>, and monsters move after you do. Tap chests, fountains, altars and the merchant to walk up and use them. Find the ${link('Stairs')} to go down a floor.</p>
-${h2('Your first fight')}<p>When a monster reaches you (or you walk into it), a battle starts. Battles alternate between your turn and the monster's.</p>
-<p>On <b>your turn</b> (${chip('strike', 'STRIKE!')}) targets appear on the monster with a ring shrinking around each one. <b>Tap each target at the moment the ring meets its centre.</b> Perfect taps deal 150% damage, and consecutive hits build a combo.</p>
-${h2('Defending')}<p>On the <b>monster's turn</b> marks appear around your hero:</p>
+${h2('Your first fight')}<p>When a monster reaches you (or you walk into it), a battle starts. Battles are played with <b>two thumbs at once</b>: you and the monster attack at the same time.</p>
+<p>Your <b>right thumb</b> attacks: ${chip('strike', 'strike')} targets appear on the monster (right half of the screen) with a ring shrinking around each one. <b>Tap each target at the moment the ring meets its centre.</b> Perfect taps deal 150% damage, and consecutive hits build a combo.</p>
+${h2('Defending')}<p>Your <b>left thumb</b> defends: whenever the monster attacks, marks appear around your hero on the left half:</p>
 <ul><li>${chip('guard', 'Shield')}: tap on time to <b>parry</b> (no damage, plus a counter-attack) or <b>block</b> (60% less damage).</li>
 <li>${chip('orb', 'Orb')}: a projectile. Tap it before it hits you.</li>
 <li>${chip('feint', 'Skull')}: a feint. <b>Don't tap it!</b></li>
 <li>${chip('rune', 'Rune')}: a curse glyph. <b>Drag</b> your finger (or mouse) along it, starting at the white dot, before the countdown runs out.</li></ul>
+<p>Some monsters (and every boss, once) challenge you to a ${link('Combat', 'rhythm duel')} instead: notes fall down four lanes, and you tap each lane as its note reaches the line.</p>
 ${h2('Between fights')}<p>Winning gives ${link('Experience', 'experience')} and ${link('Coins', 'coins')}. Each level-up lets you choose one of three ${link('Blessings')}. Drink ${link('Life_Bottle', 'Life Bottles')} from the bottom bar, swap weapons, and spend coins at the ${link('Merchant')} on floor 3.</p>
 ${h2('Dying')}<p>Death is permanent: the run ends and you start again from floor 1. The game autosaves, so you can close the tab and continue later. Your best floor is recorded on the title screen.</p>
 ${guideNav()}`, ['Guides'], 'tutorial beginner new');
 
   // ---------- Combat ----------
   page('Combat', 'Combat', () => `
-${toc(['Overview', 'Your turn: striking', 'Enemy turn: defending', 'Runes', 'Combo', 'The bottom bar', 'Winning and fleeing'])}
-${h2('Overview')}<p>Combat in Tapfighter is a turn-based rhythm game. You always attack first. Each <b>turn</b> is a short sequence of timed marks. When every mark of a turn has been resolved, the other side's turn begins after about half a second.</p>
-${h2('Your turn: striking')}<p>Your equipped weapon decides how many <b>strike targets</b> appear (its <i>strikes</i>), how long each ring takes to close (<i>ring time</i>) and the spacing between them (<i>gap</i>). Tap a target as its ring closes:</p>
+${toc(['Overview', 'Tempo', 'Striking', 'Defending', 'Runes', 'Rhythm duels', 'Combo', 'The bottom bar', 'Winning and fleeing'])}
+${h2('Overview')}<p>Combat in Tapfighter is a two-thumbed rhythm game. Both sides fight <b>at the same time</b>: your strikes stream onto the monster on the <b>right</b> half of the screen while its attacks land around your hero on the <b>left</b> half. A faint dotted line splits the two.</p>
+<ul><li>You attack in <b>volleys</b>: one weapon's worth of strikes, then a ${HERO_REST}ms breather, then the next volley.</li>
+<li>The monster attacks in <b>patterns</b>: a wind-up (red <b>!</b>), its marks, then a ${FOE_REST}ms rest before the next one.</li>
+<li><b>Runes</b> are solo moments: while one is on screen neither side starts anything new, and a rune attack waits until your current volley is done.</li></ul>
+${h2('Tempo')}<p>Everything speeds up as you go deeper. Ring times, gaps between strikes and the rests between volleys and attacks are all divided by the floor's <b>tempo</b>. Timing windows do <b>not</b> shrink, but you get less warning.</p>
+${table(['Floor', 1, 3, 5, 8, 10, 12, 15, 17], [['Tempo', ...[1, 3, 5, 8, 10, 12, 15, 17].map(d => '×' + tempoAt(d).toFixed(2))]], { sortable: false })}
+<p>Tempo is capped at ×1.5. Rune trace windows are not affected by tempo.</p>
+${h2('Striking')}<p>Your equipped weapon decides how many <b>strike targets</b> appear per volley (its <i>strikes</i>), how long each ring takes to close (<i>ring time</i>) and the spacing between them (<i>gap</i>). Tap a target as its ring closes:</p>
 ${table(['Result', 'Condition', 'Effect'], [
     ['<b class="good">PERFECT</b>', 'within the weapon\'s perfect window', '150% damage, +1 combo'],
     ['<b>GOOD</b>', 'within the good window', '100% damage, +1 combo'],
     ['<b class="bad">EARLY</b>', 'tapped before the good window opens', 'no damage, combo reset'],
     ['<b class="bad">MISS</b>', 'ring closed and the window passed without a tap', 'no damage, combo reset'],
-    ['<b class="bad">WHIFF</b>', 'tapped empty space while targets are active', 'combo reset'],
+    ['<b class="bad">WHIFF</b>', 'tapped empty space on the strike (right) half while targets are active', 'combo reset'],
   ], { sortable: false })}
 <p>About <b>25%</b> of targets are <b>critical</b> spots (shown with a star, placed on the monster's head) that deal <b>+40%</b> damage. The ${wlink('staff')}'s targets drift while the ring closes.</p>
-${h2('Enemy turn: defending')}<p>The monster winds up (a red <b>!</b> appears) and then sends one of its attacks. Each attack is a pattern of marks:</p>
+${h2('Defending')}<p>The monster winds up (a red <b>!</b> appears) and then sends one of its attacks onto the left half of the screen. Each attack is a pattern of marks:</p>
 ${table(['Mark', 'What to do', 'Perfect', 'Good', 'Missed'], [
     [chip('guard', 'Shield'), 'Tap as the ring closes', 'PARRY: no damage, counter-attack for 60% of your weapon damage (ignores armour)', 'BLOCK: take 40% damage', 'Full damage, combo reset'],
     [chip('orb', 'Orb'), 'Tap the orb at any time while it flies', 'SMASH: no damage, +1 combo', '(no timing)', 'Full damage'],
     [chip('feint', 'Skull'), '<b>Do not tap</b>', '', '', 'Tapping it: 60% damage and combo reset'],
     [chip('rune', 'Rune'), '<b>Drag</b> to trace the glyph before the countdown ends', 'PERFECT DISPEL: backlash for 90% of the curse', 'DISPELLED: backlash for 60% of the curse (ignores armour)', 'CURSED: full damage, combo reset'],
   ], { sortable: false })}
-<p>Parry <b>every</b> shield in a single attack and the monster is <b>staggered</b>: you get <b>+1 strike</b> on your next turn. See ${link('Status_effects', 'Status effects')}.</p>
+<p>Parry <b>every</b> shield in a single attack and the monster is <b>staggered</b>: your next volley gets <b>+1 strike</b>. See ${link('Status_effects', 'Status effects')}.</p>
 ${h2('Runes')}<p>Runes are the fourth combat skill: instead of tapping, you <b>draw</b>. A rune appears as a large glowing glyph in the middle of the arena with a ring of countdown dots around it. Press anywhere that is not another mark and drag along the glyph in one stroke. The white dot and arrow show where to start; either direction works, and closed glyphs (Triangle, Hourglass) can start at any corner. Size and position don't need to be exact, only the shape.</p>
 <p>A sloppy trace <b>FIZZLES</b>, which costs nothing: try again until the countdown ends. Taps never count as a trace, so you can still smash orbs that fly in while you draw.</p>
 <p>${Object.values(RUNES).map(r => `<span class="rune-glyph"><svg viewBox="-2 -2 14 14" width="44" height="44" aria-hidden="true"><polyline points="${r.pts.map(([x, y]) => `${(x * 10).toFixed(1)},${(y * 10).toFixed(1)}`).join(' ')}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${(r.pts[0][0] * 10).toFixed(1)}" cy="${(r.pts[0][1] * 10).toFixed(1)}" r="1.2" fill="currentColor"/></svg>${r.name}</span>`).join('')}</p>
 <ul><li><b>Curses</b> (pink) are enemy attacks. You get <b>${RUNE_TIME / 1000}s</b> to trace them (15% less against an enraged boss). Dispelling one bounces part of the curse back at the caster, ignoring armour.</li>
-<li><b>Sigils</b> (gold) are yours. Land <b>every</b> strike in a turn (a <b>FLAWLESS</b> turn) and a random sigil appears for <b>${SIGIL_TIME / 1000}s</b>. Tracing it fires a blast for 125% of your weapon damage (×1.5 if perfect), boosted by combo and ignoring armour. Letting it fade costs nothing.</li>
+<li><b>Sigils</b> (gold) are yours. Land <b>every</b> strike in a volley (a <b>FLAWLESS</b> volley) and a random sigil appears for <b>${SIGIL_TIME / 1000}s</b> once the monster's current attack is over (at most once every 8 seconds). Tracing it fires a blast for 125% of your weapon damage (×1.5 if perfect), boosted by combo and ignoring armour. Letting it fade costs nothing.</li>
 <li>The ${link('Blessings', 'Rune Lore')} blessing makes runes last 30% longer and hit 50% harder.</li></ul>
-${h2('Combo')}<p>Every successful strike, parry, orb smash and rune adds 1 to your combo. Each point adds 6% damage to strikes (up to +100% at 17 combo). Misses, whiffs, feint taps and unblocked hits reset it. The ${link('Blessings', 'Combo Master')} blessing increases the bonus.</p>
+${h2('Rhythm duels')}<p>Some monsters fight with music. ${mlink('bard')}s and ${mlink('banshee')}s challenge you to a <b>rhythm duel</b> for the whole battle, and every boss breaks into an <b>encore</b> (a single song) the first time it drops below half health.</p>
+<ul><li>The screen splits into <b>four lanes</b>. Notes fall down them to a line near the bottom: tap anywhere in a lane as its note crosses the line. The two left lanes suit your left thumb and the two right lanes your right.</li>
+<li><b>Chords</b> are two notes joined by a bar, always one on each side: hit them with both thumbs together.</li>
+<li>A hit deals <b>20%</b> of your weapon damage (<b>×1.5</b> if Perfect), boosted by combo and <b>ignoring armour</b>. Each note also plays its pitch, so a clean run plays the song.</li>
+<li>A missed note hurts you for 25% of the monster's base damage and resets your combo. Tapping an empty lane costs nothing.</li>
+<li>Windows: <b>±${RHYTHM_PERFECT}ms</b> perfect and <b>±${RHYTHM_GOOD}ms</b> good (Steady Hand and Keen Eye widen them by 10ms and 15ms per stack).</li>
+<li>Duel songs repeat until someone falls, each verse 5% faster and denser. Songs also get faster with the floor's tempo.</li></ul>
+${h2('Combo')}<p>Every successful strike, parry, orb smash, rune and rhythm note adds 1 to your combo. Each point adds 6% damage to strikes (up to +100% at 17 combo). Misses, whiffs, feint taps and unblocked hits reset it. The ${link('Blessings', 'Combo Master')} blessing increases the bonus.</p>
 ${h2('The bottom bar')}<ul>
-<li><b>Weapon slots</b>: swapping before any strike of your turn has been tapped restarts the turn with the new weapon for free. Swapping after that ends your turn. Swapping during the enemy turn is free.</li>
-<li><b>${link('Life_Bottle', 'Life Bottle')}</b>: heals 40% of max HP. Drinking on your turn ends that turn, so drink during the enemy's turn when you can.</li>
-<li><b>RUN</b>: 55% chance to escape. On failure the monster attacks immediately. You cannot flee from bosses. A monster you escape from is dazed for 3 turns on the map.</li></ul>
+<li><b>Weapon slots</b>: swapping throws away the rest of your current volley; the next one starts with the new weapon after a quarter of a second.</li>
+<li><b>${link('Life_Bottle', 'Life Bottle')}</b>: heals 40% of max HP. You can drink at any time (one bottle per second).</li>
+<li><b>RUN</b>: 55% chance to escape. On failure you lose your current volley and the monster attacks immediately. You cannot flee from bosses. A monster you escape from is dazed for 3 turns on the map.</li></ul>
 ${h2('Winning and fleeing')}<p>Defeated monsters drop ${link('Coins', 'coins')} and experience, sometimes a ${link('Life_Bottle', 'Life Bottle')} (15%) or a weapon (10%). See each monster's page for exact drops.</p>
 ${guideNav()}`, ['Guides', 'Mechanics'], 'fight battle parry');
 
@@ -124,9 +140,10 @@ ${h2('Defending')}
 <p>Shield windows are the same for every monster: <b>±95ms</b> perfect (parry) and <b>±190ms</b> good (block). Monsters vary the <b>ring time</b> instead:</p>
 ${table(['Monster', 'Fastest ring', 'Slowest ring'], [...ORDER, ...BOSSES].map(t => {
     const l = ENEMIES[t].attacks.map(a => a.lead);
+    if (!l.length) return [`${micon(t, 1)} ${mlink(t)}`, 'Rhythm duel', '-'];
     return [`${micon(t, 1)} ${mlink(t)}`, `${Math.min(...l)}ms`, `${Math.max(...l)}ms`];
   }))}
-<p>Bosses below half HP use rings <b>15% shorter</b>.</p>
+<p>These are floor-1 values: deeper floors divide every ring time by the floor's ${link('Combat', 'tempo')}. Bosses below half HP use rings <b>15% shorter</b> on top of that.</p>
 ${h2('Widening windows')}
 ${table(['Source', 'Perfect', 'Good', 'Applies to'], [
     [link('Blessings', 'Steady Hand') + ' (per stack)', '+25ms', '-', 'Strikes and shields'],
@@ -169,10 +186,10 @@ ${guideNav()}`, ['Guides', 'Mechanics'], 'formula math armour');
   // ---------- Status effects ----------
   page('Status_effects', 'Status effects', () => `
 ${table(['Effect', 'Source', 'What it does'], [
-    ['<b>Burn</b>', `${wlink('staff')}, ${link('Affixes', 'Flaming')} affix`, 'Each hit adds stacks. At the start of the enemy\'s turn it takes 2 damage per stack, then stacks are halved.'],
-    ['<b>Bleed</b>', wlink('axe'), 'Each hit adds 2 stacks. At the start of the enemy\'s turn it takes 2 damage per stack, then loses 1 stack.'],
+    ['<b>Burn</b>', `${wlink('staff')}, ${link('Affixes', 'Flaming')} affix`, `Each hit adds stacks. Every ${DOT_TICK / 1000}s the monster takes 2 damage per stack, then stacks are halved.`],
+    ['<b>Bleed</b>', wlink('axe'), `Each hit adds 2 stacks. Every ${DOT_TICK / 1000}s the monster takes 2 damage per stack, then loses 1 stack.`],
     ['<b>Stun</b>', `${wlink('club')} (35%), ${wlink('hammer')} (100%) on Perfect hits`, 'The monster skips its next attack entirely. Cannot be re-applied while already stunned.'],
-    ['<b>Stagger</b>', 'Parrying every shield in one attack', 'You get +1 strike on your next turn.'],
+    ['<b>Stagger</b>', 'Parrying every shield in one attack', 'Your next volley gets +1 strike.'],
     ['<b>Enrage</b>', 'Bosses below 50% HP', 'Their rings and gaps become 15% shorter.'],
     ['<b>Dazed</b>', 'Fleeing from a monster', 'On the map the monster cannot move or attack for 3 turns.'],
     ['<b>Asleep</b>', 'Monsters at the start of a floor', 'Wanders randomly (20% per turn) until it sees you within 6 tiles.'],
@@ -215,8 +232,8 @@ ${h2('General tips')}<ul>
 <li><b>Parrying is better than blocking, and blocking is better than panicking.</b> A late but in-window tap still blocks 60% of the damage.</li>
 <li><b>Keep your thumbs off skulls.</b> Feints are designed to bait reflex taps.</li>
 <li><b>Armour is subtracted from every hit.</b> Against armoured monsters use few, big hits or a piercing weapon, not the ${wlink('dagger')}.</li>
-<li><b>Drink on their turn.</b> Drinking a Life Bottle on your own turn throws away your remaining strikes.</li>
-<li><b>Swap before you tap.</b> Swapping weapons is free until you have tapped your first strike of the turn.</li>
+<li><b>Watch the left half first.</b> A missed strike only costs damage; a missed shield costs health. When it gets busy, let a strike go rather than a parry.</li>
+<li><b>Swap between volleys.</b> Swapping throws away whatever is left of your current volley.</li>
 <li><b>Use the map.</b> Monsters wake within 6 tiles of sight. Slow ${mlink('zombie')}s can simply be walked away from.</li></ul>
 ${h2('Floors 1-5')}<p>Learn timing on ${mlink('zombie')}s and ${mlink('skeleton')}s. Explore fully for coins and Life Bottles; the ${link('Merchant')} on floor 3 is your chance to stock up before the ${mlink('pumpkinKing')}. Aim to reach floor 5 at level 4-5 with 3+ bottles.</p>
 ${h2('Floors 6-10')}<p>The ${link('Crypts')} bring fast ${mlink('ghoul')}s and spectral ${mlink('wraith')}s (from floor 7). Find a piercing weapon before floor 10: the ${mlink('colossus')} has the highest armour in the game.</p>
@@ -293,7 +310,7 @@ ${guideNav()}`, ['Items'], 'perk level up');
   page('Life_Bottle', 'Life Bottle', () => itemBox('Life Bottle', potion(6), [['Effect', 'Heal 40% of max HP'], ['Price', '22 + 3 × floor'], ['Usable', 'Map and battle']]) +
     `<p>The <b>Life Bottle</b> is the main healing item. You start each run with 2. Tap the bottle in the bottom bar to drink one.</p>
 <ul><li>Heals 40% of max HP (+50% per ${link('Blessings', 'Alchemy')} stack). It cannot be drunk at full HP.</li>
-<li>In battle, drinking on <b>your</b> turn ends your turn. Drinking during the monster's turn is free.</li>
+<li>In battle you can drink at any time, at most one bottle per second.</li>
 <li>Found lying on floors (0-2 per floor), in 25% of chests, dropped by 15% of monsters and every boss, and sold by the ${link('Merchant')}.</li>
 <li><b>Bottle Bearer</b> grants 2 immediately.</li></ul>`, ['Items'], 'potion heal');
   page('Bone_Elixir', 'Bone Elixir', () => itemBox('Bone Elixir', img(SPR.potion, 6), [['Effect', '+10 max HP and +10 HP'], ['Price', '70 + 6 × floor']]) +
@@ -381,7 +398,9 @@ ${h2('Growth')}<p>He gains +4 max HP per level (see ${link('Experience')}), plus
   page('Controls', 'Controls', () => table(['Action', 'Touch', 'Keyboard'], [
     ['Walk', 'Tap a tile', 'Arrow keys / WASD (one step)'],
     ['Use chest, merchant, etc.', 'Tap it', '-'],
-    ['Strike / parry / smash', 'Tap the mark', '-'],
+    ['Strike', 'Right thumb: tap the ring on the monster', '-'],
+    ['Parry / smash', 'Left thumb: tap the mark by your hero', '-'],
+    ['Rhythm notes', 'Tap the lane as the note hits the line', '-'],
     ['Trace a rune', 'Drag along the glyph', 'Drag with the mouse'],
     ['Autoexplore', 'AUTO button (tap again or anywhere to stop)', 'X'],
     ['Swap weapon', 'Tap a weapon slot', '1, 2, 3 (in battle)'],
@@ -392,6 +411,7 @@ ${h2('Growth')}<p>He gains +4 max HP per level (see ${link('Experience')}), plus
 
   // ---------- Update history ----------
   page('Update_history', 'Update history', () => table(['Date', 'Update'], [
+    ['20 October 2026', '<b>Two-thumb combat and rhythm duels.</b> Battles are no longer turn-based: you strike with your right thumb while defending with your left, and everything speeds up the deeper you go. New monsters, the <b>Bone Bard</b> and the <b>Banshee</b>, challenge you to four-lane rhythm duels, and every boss breaks into a rhythm encore at half health.'],
     ['20 October 2026', '<b>Runes, autoexplore and stair beacons.</b> Some monsters now cast <b>rune curses</b> you dispel by tracing the glyph, and flawless strike turns earn a <b>sigil</b> to trace for a bonus blast. New blessing: Rune Lore. An <b>AUTO</b> button explores the floor for you, and stairs are now marked with a light pillar, an off-screen pointer and a DESCEND button.'],
     ['20 October 2026', `<b>The Tapfighter Wiki</b> launches, with a WIKI button on the title screen and in the pause menu.`],
     ['20 October 2026', '<b>Tapfighter released.</b> 15 floors across 3 regions, 10 monsters, 3 bosses, 10 weapons, 7 affixes and 14 blessings.'],

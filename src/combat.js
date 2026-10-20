@@ -1,13 +1,19 @@
-// Timing-based battle scene. Player phase: tap closing rings on the foe.
-// Enemy phase: tap shields to parry, smash orbs, and leave skull feints alone.
-// Runes: drag to trace curse glyphs before they land, and your own sigil after a flawless turn.
+// Timing-based battle scene, played with two thumbs at once. Your strikes stream onto the foe
+// (right half: tap closing rings) while its attacks land around you (left half: parry shields,
+// smash orbs, leave skull feints alone). Runes pause both streams: drag to trace a curse before it
+// lands, or your own sigil after a flawless volley. Rhythm foes (and boss encores) swap all of this
+// for a four-lane song where notes fall to a hit line. Everything speeds up with depth.
 import { G, setScene, shake, flash } from './engine.js';
 import { text } from './font.js';
 import { SPR, weaponIcon } from './sprites.js';
 import { disc, ring, ellipse, line, silhouette, pixelsOf, clamp, lerp } from './gfx.js';
-import { ENEMIES, weaponStats, potionHeal, gainXp, goldMul, makeWeapon, weaponName, RARITY, RUNE_TIME, SIGIL_TIME, runeTime } from './data.js';
+import {
+  ENEMIES, weaponStats, potionHeal, gainXp, goldMul, makeWeapon, weaponName, RARITY, RUNE_TIME, SIGIL_TIME, runeTime,
+  tempoAt, HERO_REST, FOE_REST, DOT_TICK,
+} from './data.js';
 import { RUNES, gradeRune, drawRune } from './runes.js';
-import { sfx, playMusic } from './audio.js';
+import { LANES, LANE_COL, RHYTHM_PERFECT, RHYTHM_GOOD, makeSong } from './rhythm.js';
+import { sfx, playMusic, tone, drum } from './audio.js';
 import { rand } from './rng.js';
 import * as ui from './ui.js';
 import { makeBackdrop } from './backdrop.js';
@@ -16,6 +22,7 @@ import { GameOver } from './title.js';
 
 const R_IN = 8;
 const R_TAP = 23;
+const SIGIL_COOLDOWN = 8000;
 
 export class Combat {
   constructor(run, ent, explore) {
@@ -33,11 +40,16 @@ export class Combat {
     this.battleNo = bumpBattles();
     this.hints = this.battleNo <= 4;
     this.hint = null;
-    this.banner = { text: this.def.name, sub: this.def.boss ? '- BOSS -' : 'ATTACKS!', t: 0, dur: this.def.boss ? 1.6 : 1.0 };
-    this.after(this.def.boss ? 1600 : 1000, () => this.startPlayer());
+    this.tempo = tempoAt(run.depth);
+    this.volley = null; this.atk = null; this.pendingAtk = null; this.sigilPending = false;
+    this.heroNext = 0; this.foeNext = 0; this.dotNext = 0; this.sigilReady = 0; this.potionReady = 0;
+    this.encoreDone = false; this.song = null;
+    this.banner = { text: this.def.name, sub: this.def.boss ? '- BOSS -' : this.def.rhythm ? 'STRIKES UP A TUNE!' : 'ATTACKS!', t: 0, dur: this.def.boss ? 1.6 : 1.0 };
+    this.after(this.def.boss ? 1600 : 1000, () => this.begin());
   }
 
-  enter() { playMusic(this.def.boss ? 'boss' : 'combat'); if (this.def.boss) sfx('boss'); }
+  enter() { playMusic(this.def.boss ? 'boss' : this.def.rhythm ? null : 'combat'); if (this.def.boss) sfx('boss'); }
+  music() { playMusic(this.def.boss ? 'boss' : 'combat'); }
   resize() { this.layout(); }
 
   layout() {
@@ -71,14 +83,15 @@ export class Combat {
   }
 
   // Choose a mark position inside rect, keeping distance from marks that overlap in time.
-  spot(rect, hitT, lead, pref = null) {
+  // side 'L' / 'R' keeps the mark on that half of the screen (left thumb defends, right thumb strikes).
+  spot(rect, hitT, lead, pref = null, side = null) {
     let best = null, bestD = -1;
     for (let i = 0; i < 30; i++) {
       const grow = i > 12 ? 12 : 0;
       let x, y;
       if (pref && i === 0) [x, y] = pref;
       else { x = rect.x + 4 - grow + rand.next() * (rect.w - 8 + grow * 2); y = rect.y + 4 - grow + rand.next() * (rect.h - 8 + grow * 2); }
-      x = clamp(x, R_IN + 14, G.W - R_IN - 14);
+      x = clamp(x, side === 'R' ? G.W / 2 + R_IN + 7 : R_IN + 14, side === 'L' ? G.W / 2 - R_IN - 7 : G.W - R_IN - 14);
       y = clamp(y, this.top + R_IN + 8, this.barY - 22);
       let dmin = 1e9;
       for (const m of this.marks) {
@@ -104,108 +117,274 @@ export class Combat {
 
   prompt(t, col) { this.promptT = { text: t, col, t: 0 }; }
 
-  // ---------- Phases ----------
-  startPlayer() {
+  // ---------- Streams ----------
+  // Both sides run on their own clocks. A volley is one weapon's worth of strikes; an attack is one
+  // enemy pattern. Runes (and sigils) are solo moments, so neither side starts anything new while
+  // one is pending, and a rune attack waits for your current volley to finish first.
+  begin() {
     if (this.over) return;
+    if (this.def.rhythm) { this.startRhythm(this.def.rhythm, true); return; }
+    this.phase = 'fight';
+    this.heroNext = this.clock;
+    this.foeNext = this.clock + 900;
+    this.dotNext = this.clock + DOT_TICK;
+    if (this.hints) this.hint = 'LEFT THUMB DEFENDS - RIGHT THUMB STRIKES';
+  }
+
+  runePending() { return this.marks.some(m => m.kind === 'rune' && !m.done); }
+
+  startVolley() {
     const w = this.run.weapons[this.run.equipped];
     const s = (this.ws = weaponStats(w, this.run));
-    this.phase = 'player'; this.marks = []; this.phaseResolved = 0; this.phaseHits = 0; this.stroke = null;
+    const lead = Math.round(s.lead / this.tempo), gap = Math.round(s.gap / this.tempo);
     const n = s.strikes + this.bonus; this.bonus = 0;
-    this.phaseStrikes = n; this.sigilOffered = false;
-    const t0 = this.clock + 250 + s.lead;
+    const v = (this.volley = { n, hits: 0, resolved: 0, marks: [] });
+    const t0 = this.clock + 150 + lead;
     const r = this.foeRect();
     const head = [r.x + this.def.head[0] * r.w, r.y + this.def.head[1] * r.h];
     for (let i = 0; i < n; i++) {
-      const hitT = t0 + i * s.gap;
+      const hitT = t0 + i * gap;
       const crit = rand.chance(0.25);
-      const [x, y] = this.spot(r, hitT, s.lead, crit ? head : null);
-      this.marks.push({
-        kind: 'strike', x, y, hitT, lead: s.lead, spawnT: hitT - s.lead, perfect: s.perfect, good: s.good, crit,
+      const [x, y] = this.spot(r, hitT, lead, crit ? head : null, 'R');
+      const m = {
+        kind: 'strike', group: v, x, y, hitT, lead, spawnT: hitT - lead, perfect: s.perfect, good: s.good, crit,
         vx: s.drift ? rand.range(-16, 16) : 0, vy: s.drift ? rand.range(-10, 10) : 0, done: false,
-      });
+      };
+      v.marks.push(m); this.marks.push(m);
     }
-    this.prompt('STRIKE!', '#f0d050');
-    if (this.hints) this.hint = 'TAP EACH RING AS IT CLOSES';
   }
 
-  startEnemy() {
-    if (this.over) return;
-    this.marks = [];
+  finishVolley() {
+    const v = this.volley;
+    this.volley = null;
+    this.heroNext = this.clock + HERO_REST / this.tempo;
+    if (v.n > 0 && v.hits === v.n && this.clock >= this.sigilReady) {
+      this.sigilPending = true;
+      this.pop('FLAWLESS!', G.W * 0.75, this.top + 14, '#f0d050');
+    }
+  }
+
+  // Pick the next attack; rune attacks wait for your volley so they can be traced one-handed.
+  nextAttack() {
     const f = this.foe;
-    if (f.burn > 0) { this.damageFoe(f.burn * 2, '#e8822c', null, 'BURN'); f.burn = Math.floor(f.burn / 2); }
-    if (!this.over && f.bleed > 0) { this.damageFoe(f.bleed * 2, '#d04040', null, 'BLEED'); f.bleed = Math.max(0, f.bleed - 1); }
-    if (this.over) return;
     if (f.stun > 0) {
       f.stun--;
       this.pop('STUNNED!', this.foeX, this.foeRect().y - 6, '#f0d050', 2);
       sfx('stun');
-      this.phase = 'pause';
-      this.after(900, () => this.startPlayer());
+      this.foeNext = this.clock + 1800;
       return;
     }
     const atks = this.def.attacks;
     const atk = this.def.boss ? atks[this.attackIdx++ % atks.length] : rand.pick(atks);
+    if (atk.hits.some(h => h.type === 'rune')) this.pendingAtk = atk;
+    else this.startAttack(atk);
+  }
+
+  startAttack(atk) {
+    const f = this.foe;
     const enraged = this.def.boss && f.hp < f.maxHp / 2;
-    const lead = Math.round(atk.lead * (enraged ? 0.85 : 1));
-    this.phase = 'enemy'; this.foeA.wind = 1; this.stroke = null;
-    this.atkGuards = 0; this.atkParries = 0;
-    const start = this.clock + 520;
+    const speed = this.tempo * (enraged ? 1 / 0.85 : 1);
+    const lead = Math.round(atk.lead / speed);
+    this.foeA.wind = 1; this.stroke = null;
+    const a = (this.atk = { guards: 0, parries: 0, marks: [] });
+    const start = this.clock + 520 / this.tempo;
     const B = this.run.bless;
     const hr = this.heroRect();
     const zone = { x: hr.x - 26, y: hr.y - 30, w: hr.w + 52, h: hr.h + 14 };
     const fr = this.foeRect();
     let hasFeint = false, hasOrb = false, hasRune = false;
+    const add = m => { m.group = a; a.marks.push(m); this.marks.push(m); };
     for (const h of atk.hits) {
-      const hitT = start + lead + Math.round(h.t * (enraged ? 0.85 : 1));
+      const off = Math.round(h.t / speed);
+      const hitT = start + lead + off;
       const dmg = Math.max(1, Math.round(f.dmg * atk.mul * (h.mul || 1)));
       if (h.type === 'rune') {
         hasRune = true;
+        // Rune windows don't shrink with depth: tracing is hard enough already.
         const win = Math.round(runeTime(this.run, RUNE_TIME) * (enraged ? 0.85 : 1));
-        this.addRune('curse', rand.pick(h.runes), start + Math.round(h.t * (enraged ? 0.85 : 1)), win, dmg);
+        add(this.makeRune('curse', rand.pick(h.runes), start + off, win, dmg));
       } else if (h.type === 'orb') {
         hasOrb = true;
-        this.marks.push({ kind: 'orb', sx: fr.x + fr.w / 2, sy: fr.y + fr.h * 0.45, tx: this.heroX + rand.range(-8, 8), ty: hr.y + hr.h * 0.4,
+        add({ kind: 'orb', sx: fr.x + fr.w / 2, sy: fr.y + fr.h * 0.45, tx: this.heroX + rand.range(-8, 8), ty: hr.y + hr.h * 0.4,
           hitT, lead, spawnT: hitT - lead, dmg, done: false });
       } else {
-        if (h.type === 'feint') hasFeint = true; else this.atkGuards++;
-        const [x, y] = this.spot(zone, hitT, lead);
-        this.marks.push({ kind: h.type, x, y, hitT, lead, spawnT: hitT - lead, vx: 0, vy: 0, dmg,
+        if (h.type === 'feint') hasFeint = true; else a.guards++;
+        const [x, y] = this.spot(zone, hitT, lead, null, 'L');
+        add({ kind: h.type, x, y, hitT, lead, spawnT: hitT - lead, vx: 0, vy: 0, dmg,
           perfect: 95 + 25 * (B.steady || 0), good: 190 + 35 * (B.keen || 0), done: false });
       }
     }
     this.prompt(atk.name.toUpperCase() + (enraged ? '!!' : '!'), '#ff6050');
     if (hasRune) sfx('rune');
-    if (this.hints) this.hint = hasRune ? 'DRAG TO TRACE THE RUNE BEFORE IT LANDS' : hasFeint ? "DON'T TAP SKULLS - THEY'RE FEINTS" : hasOrb ? 'TAP ORBS BEFORE THEY HIT YOU' : 'TAP SHIELDS ON TIME TO PARRY';
+    if (this.hints) this.hint = hasRune ? 'DRAG TO TRACE THE RUNE BEFORE IT LANDS' : hasFeint ? "DON'T TAP SKULLS - THEY'RE FEINTS" : hasOrb ? 'TAP ORBS BEFORE THEY HIT YOU' : this.hint;
+  }
+
+  finishAttack() {
+    const a = this.atk;
+    this.atk = null;
+    this.foeNext = this.clock + FOE_REST / this.tempo;
+    if (a.guards > 0 && a.parries === a.guards) {
+      this.bonus = 1;
+      this.pop('STAGGERED! +1 STRIKE', this.foeX, this.foeRect().y - 8, '#70d0e0', 1);
+    }
+  }
+
+  tickDots() {
+    const f = this.foe;
+    if (f.burn > 0) { this.damageFoe(f.burn * 2, '#e8822c', null, 'BURN'); f.burn = Math.floor(f.burn / 2); }
+    if (!this.over && f.bleed > 0) { this.damageFoe(f.bleed * 2, '#d04040', null, 'BLEED'); f.bleed = Math.max(0, f.bleed - 1); }
+  }
+
+  updateFight() {
+    if (this.clock >= this.dotNext) { this.dotNext += DOT_TICK; this.tickDots(); if (this.over) return; }
+    // Bosses break into a rhythm encore the first time they drop below half health.
+    if (this.def.encore && !this.encoreDone && this.foe.hp < this.foe.maxHp / 2) {
+      this.encorePending = true;
+      if (!this.volley && !this.atk && !this.runePending()) { this.encoreDone = true; this.startRhythm(this.def.encore, false); return; }
+    }
+    const busy = this.runePending() || this.encorePending;
+    if (!busy) {
+      if (this.sigilPending && !this.atk && !this.volley) {
+        this.sigilPending = false;
+        this.sigilReady = this.clock + SIGIL_COOLDOWN;
+        this.marks.push(this.makeRune('sigil', rand.pick(Object.keys(RUNES)), this.clock, runeTime(this.run, SIGIL_TIME)));
+        sfx('rune');
+        if (this.hints) this.hint = 'DRAG ALONG THE SIGIL FOR A BONUS BLAST';
+      } else if (this.pendingAtk && !this.volley) {
+        const atk = this.pendingAtk; this.pendingAtk = null;
+        this.startAttack(atk);
+      } else {
+        if (!this.volley && !this.pendingAtk && !this.sigilPending && this.clock >= this.heroNext) this.startVolley();
+        if (!this.atk && !this.pendingAtk && !this.sigilPending && this.clock >= this.foeNext) this.nextAttack();
+      }
+    }
+    for (const m of this.marks) {
+      if (m.done) continue;
+      if (m.kind === 'orb') { if (this.clock >= m.hitT) { m.done = true; this.hurt(m.dmg); } }
+      else if (this.clock > m.hitT + m.good) this.autoResolve(m);
+      if (this.over) return;
+    }
+    if (this.volley && this.volley.marks.every(m => m.done)) this.finishVolley();
+    if (this.atk && this.atk.marks.every(m => m.done)) this.finishAttack();
+    this.marks = this.marks.filter(m => !m.done);
+  }
+
+  // ---------- Rhythm ----------
+  // A song: notes fall down four lanes and you tap a lane as its note crosses the line. Hits damage
+  // the foe (ignoring armour), misses hurt you. Rhythm foes play song after song, each a little denser;
+  // a boss encore is a single song before the fight resumes.
+  startRhythm(cfg, loop) {
+    this.phase = 'rhythm';
+    this.marks = []; this.volley = null; this.atk = null; this.pendingAtk = null; this.sigilPending = false; this.encorePending = false;
+    this.stroke = null;
+    playMusic(null);
+    const verse = this.song ? this.song.verse + 1 : 0;
+    const depth = this.run.depth;
+    const song = makeSong(rand, {
+      bpm: cfg.bpm * this.tempo * (1 + 0.05 * verse),
+      bars: loop ? 8 : 10,
+      density: Math.min(0.9, cfg.density + 0.015 * depth + 0.05 * verse),
+      chords: Math.min(0.5, cfg.chords + 0.012 * depth),
+      root: 52 + (depth % 5),
+    });
+    const fall = Math.round(1500 / this.tempo);
+    const start = this.clock + 1200;
+    this.song = {
+      cfg, loop, verse, beat: song.beat, start, end: start + song.len, fall, nextBeat: 0,
+      notes: song.notes.map(n => ({ ...n, t: start + n.t, done: false })),
+      hits: 0, flash: new Array(LANES).fill(-1e9),
+    };
+    this.prompt(verse ? 'ENCORE!' : cfg.song.toUpperCase(), '#c070f0');
+    this.hint = 'TAP A LANE AS ITS NOTE HITS THE LINE';
+  }
+
+  rhythmGeom() {
+    const top = this.top + 16, hitY = this.barY - 30;
+    return { top, hitY, lw: G.W / LANES };
+  }
+
+  updateRhythm() {
+    const sg = this.song;
+    // Keep time with a simple kit so the beat is audible before the first note.
+    while (this.clock >= sg.start - sg.beat * 2 + sg.nextBeat * sg.beat && sg.start - sg.beat * 2 + sg.nextBeat * sg.beat <= sg.end) {
+      const b = sg.nextBeat++;
+      drum(b % 4 === 0 ? 'kick' : b % 2 === 0 ? 'snare' : 'hat');
+    }
+    for (const n of sg.notes) {
+      if (n.done || this.clock <= n.t + RHYTHM_GOOD) continue;
+      n.done = true;
+      this.combo = 0;
+      const { hitY, lw } = this.rhythmGeom();
+      this.pop('MISS', (n.lane + 0.5) * lw, hitY - 14, '#8a7a9a');
+      this.hurt(Math.max(1, Math.round(this.foe.dmg * 0.25)), true);
+      if (this.over) return;
+    }
+    if (this.clock > sg.end + RHYTHM_GOOD + 400 && sg.notes.every(n => n.done)) this.endSong();
+  }
+
+  endSong() {
+    const sg = this.song;
+    const total = sg.notes.length, pct = total ? Math.round((sg.hits / total) * 100) : 100;
+    this.pop(`${pct}% - ${pct >= 95 ? 'VIRTUOSO!' : pct >= 80 ? 'BRAVO!' : pct >= 60 ? 'NOT BAD' : 'BOOO!'}`, G.W / 2, this.top + 40, pct >= 80 ? '#f0d050' : '#a898b0', 2);
+    if (sg.loop) {
+      this.phase = 'pause';
+      this.after(900, () => { if (!this.over) this.startRhythm(sg.cfg, true); });
+    } else {
+      this.phase = 'fight';
+      this.song = null;
+      this.music();
+      this.heroNext = this.clock + 600; this.foeNext = this.clock + 1200; this.dotNext = this.clock + DOT_TICK;
+      if (this.hints) this.hint = null;
+    }
+  }
+
+  rhythmTap(x, y, tT) {
+    const { top, hitY, lw } = this.rhythmGeom();
+    if (y < top || y > this.barY) return;
+    const lane = clamp(Math.floor(x / lw), 0, LANES - 1);
+    const sg = this.song;
+    sg.flash[lane] = this.clock;
+    let best = null;
+    for (const n of sg.notes) {
+      if (n.done || n.lane !== lane) continue;
+      const d = Math.abs(tT - n.t);
+      if (d <= RHYTHM_GOOD + 15 * (this.run.bless.keen || 0) && (!best || d < Math.abs(tT - best.t))) best = n;
+    }
+    if (!best) return; // stray taps are free
+    best.done = true;
+    sg.hits++;
+    const B = this.run.bless;
+    const perfect = Math.abs(tT - best.t) <= RHYTHM_PERFECT + 10 * (B.steady || 0);
+    this.combo++;
+    this.run.bestCombo = Math.max(this.run.bestCombo || 0, this.combo);
+    const s = (this.ws = weaponStats(this.run.weapons[this.run.equipped], this.run));
+    const comboMul = 1 + Math.min(1, this.combo * 0.04 * (1 + 0.5 * (B.combo || 0)));
+    const dmg = Math.max(1, Math.round(s.dmg * 0.2 * (perfect ? 1.5 : 1) * comboMul * (this.def.boss ? s.boss : 1)));
+    const cx = (lane + 0.5) * lw;
+    tone(best.midi);
+    this.burst(cx, hitY, LANE_COL[lane], perfect ? 10 : 6, 70);
+    this.pop(perfect ? 'PERFECT' : 'GOOD', cx, hitY - 16, perfect ? '#f0d050' : '#fffbea');
+    if (s.heal) this.healHero(s.heal, true);
+    this.damageFoe(dmg, LANE_COL[lane], null);
   }
 
   // A rune glyph to trace. owner 'curse' = enemy spell (fail = hit), 'sigil' = your bonus blast.
-  addRune(owner, id, spawnT, win, dmg = 0) {
-    const size = this.runeSize();
-    this.marks.push({ kind: 'rune', owner, rune: id, x: Math.round(G.W / 2), y: Math.round(this.top + this.arenaH * 0.46),
-      size, spawnT, hitT: spawnT + win, lead: win, good: 0, dmg, tries: 0, done: false });
+  makeRune(owner, id, spawnT, win, dmg = 0) {
+    return { kind: 'rune', owner, rune: id, x: Math.round(G.W / 2), y: Math.round(this.top + this.arenaH * 0.46),
+      size: this.runeSize(), spawnT, hitT: spawnT + win, lead: win, good: 0, dmg, tries: 0, done: false };
   }
   runeSize() { return Math.round(Math.max(48, Math.min(G.W * 0.5, this.arenaH * 0.42, 120))); }
   activeRune(t = this.clock) { return this.marks.find(m => m.kind === 'rune' && !m.done && t >= m.spawnT); }
 
-  endPhase() {
-    const was = this.phase;
-    this.phase = 'pause';
-    if (was === 'enemy' && this.atkGuards > 0 && this.atkParries === this.atkGuards) {
-      this.bonus = 1;
-      this.pop('STAGGERED! +1 STRIKE', this.foeX, this.foeRect().y - 8, '#70d0e0', 1);
-    }
-    this.after(was === 'player' ? 450 : 520, () => (was === 'player' ? this.startEnemy() : this.startPlayer()));
-  }
-
   // ---------- Resolution ----------
   onTap(x, y) {
     if (this.phase === 'victory') { if (this.canLeave) this.leave(); return; }
-    if (this.phase !== 'player' && this.phase !== 'enemy') return;
     const tT = this.clock + Math.min(60, performance.now() - G.frameNow);
+    if (this.phase === 'rhythm') { this.rhythmTap(x, y, tT); return; }
+    if (this.phase !== 'fight') return;
     let best = null, bs = 1e9;
     for (const m of this.marks) {
       if (m.done || tT < m.spawnT || m.kind === 'rune') continue;
-      if (this.phase === 'player' && m.kind !== 'strike') continue;
       const p = this.markPos(m, tT);
       const d = Math.hypot(p.x - x, p.y - y);
       if (d > (m.kind === 'orb' ? 20 : R_TAP)) continue;
@@ -213,8 +392,9 @@ export class Combat {
       if (sc < bs) { bs = sc; best = m; }
     }
     if (!best) {
-      if (this.activeRune(tT)) { this.stroke = [[x, y]]; return; }
-      if (this.phase === 'player' && this.marks.some(m => !m.done && tT >= m.spawnT)) {
+      if (this.activeRune(tT)) { if (!this.stroke) { this.stroke = [[x, y]]; this.strokeId = G.tapId; } return; }
+      // Empty taps on the strike half break your combo; the defend half forgives them.
+      if (x > G.W / 2 && this.marks.some(m => m.kind === 'strike' && !m.done && tT >= m.spawnT)) {
         this.combo = 0;
         this.pop('WHIFF', x, y - 6, '#8a7a9a');
         sfx('whiff');
@@ -224,18 +404,18 @@ export class Combat {
     this.resolve(best, tT);
   }
 
-  onDrag(x, y) {
+  onDrag(x, y, id) {
     const s = this.stroke;
-    if (!s) return;
+    if (!s || (id !== undefined && id !== this.strokeId)) return;
     const [lx, ly] = s[s.length - 1];
     if (Math.hypot(x - lx, y - ly) >= 1.5 && s.length < 400) s.push([x, y]);
   }
 
-  onRelease(x, y) {
+  onRelease(x, y, id) {
     const s = this.stroke;
+    if (!s || (id !== undefined && id !== this.strokeId)) return;
+    this.onDrag(x, y, id);
     this.stroke = null;
-    if (!s) return;
-    this.onDrag(x, y);
     const m = this.activeRune();
     if (!m || this.over) return;
     // Ignore taps and tiny wiggles; only a real attempt counts.
@@ -317,7 +497,7 @@ export class Combat {
   }
 
   strike(m, grade, p) {
-    this.phaseResolved++;
+    m.group.resolved++;
     if (grade === 'early' || grade === 'miss') {
       this.combo = 0;
       this.pop(grade === 'early' ? 'EARLY' : 'LATE', p.x, p.y - 6, '#8a7a9a');
@@ -326,7 +506,7 @@ export class Combat {
     }
     const s = this.ws, run = this.run, B = run.bless;
     const perfect = grade === 'perfect';
-    this.phaseHits++;
+    m.group.hits++;
     this.combo++;
     run.bestCombo = Math.max(run.bestCombo || 0, this.combo);
     const comboMul = 1 + Math.min(1, this.combo * 0.06 * (1 + 0.5 * (B.combo || 0)));
@@ -353,7 +533,7 @@ export class Combat {
     this.foeA.lunge = 1;
     const B = this.run.bless;
     if (grade === 'perfect') {
-      this.combo++; this.atkParries++;
+      this.combo++; m.group.parries++;
       this.heroA.swing = 1;
       const ws = weaponStats(this.run.weapons[this.run.equipped], this.run);
       const counter = Math.max(1, Math.round(ws.dmg * 0.6 * (B.riposte ? 2 : 1)));
@@ -451,7 +631,7 @@ export class Combat {
   }
 
   flee() {
-    if (this.def.boss || (this.phase !== 'player' && this.phase !== 'enemy' && this.phase !== 'pause')) { sfx('deny'); return; }
+    if (this.def.boss || (this.phase !== 'fight' && this.phase !== 'rhythm' && this.phase !== 'pause')) { sfx('deny'); return; }
     if (rand.chance(0.55)) {
       this.over = true; this.phase = 'fled'; this.marks = [];
       this.ent.hp = this.foe.hp;
@@ -461,20 +641,32 @@ export class Combat {
     } else {
       this.pop('NO ESCAPE!', this.heroX, this.heroRect().y - 10, '#ff6050', 1);
       sfx('deny');
-      this.marks = []; this.phase = 'pause'; this.timers = [];
-      this.after(350, () => this.startEnemy());
+      // A failed escape costs your current volley and invites an attack right away.
+      if (this.phase === 'fight') {
+        this.dropVolley();
+        this.heroNext = this.clock + 800;
+        if (!this.atk) this.foeNext = this.clock;
+      }
     }
   }
 
   drinkPotion() {
     const run = this.run;
-    if (this.over || run.potions <= 0 || run.hp >= run.maxHp) { sfx('deny'); return; }
+    if (this.over || run.potions <= 0 || run.hp >= run.maxHp || this.clock < this.potionReady) { sfx('deny'); return; }
     run.potions--;
+    this.potionReady = this.clock + 1000;
     this.healHero(potionHeal(run));
     sfx('potion');
     const hr = this.heroRect();
     this.burst(hr.x + hr.w / 2, hr.y + hr.h / 2, '#d04040', 14, 50);
-    if (this.phase === 'player') { this.marks = []; this.endPhase(); }
+  }
+
+  // Throw away the rest of the current volley (weapon swap, failed escape).
+  dropVolley() {
+    if (!this.volley) return;
+    const v = this.volley;
+    this.marks = this.marks.filter(m => m.group !== v);
+    this.volley = null;
   }
 
   swap(i) {
@@ -482,9 +674,9 @@ export class Combat {
     this.run.equipped = i;
     sfx('swap');
     this.heroA.swing = 0.5;
-    if (this.phase === 'player') {
-      if (this.phaseResolved === 0) { this.marks = []; this.phase = 'pause'; this.timers = []; this.after(250, () => this.startPlayer()); }
-      else { this.marks = []; this.endPhase(); }
+    if (this.phase === 'fight' && this.volley) {
+      this.dropVolley();
+      this.heroNext = this.clock + 250;
     }
   }
 
@@ -522,24 +714,8 @@ export class Combat {
     this.foe.ghost = Math.max(this.foe.hp, this.foe.ghost - dt * this.foe.maxHp * 0.6);
     this.heroGhost = this.heroGhost > this.run.hp ? Math.max(this.run.hp, this.heroGhost - dt * this.run.maxHp * 0.5) : this.run.hp;
 
-    if (this.phase === 'player' || this.phase === 'enemy') {
-      for (const m of this.marks) {
-        if (m.done) continue;
-        if (m.kind === 'orb') { if (this.clock >= m.hitT) { m.done = true; this.hurt(m.dmg); } }
-        else if (this.clock > m.hitT + m.good) this.autoResolve(m);
-        if (this.over) break;
-      }
-      // A flawless turn (every strike landed) earns a sigil to trace for a bonus blast.
-      if (!this.over && this.phase === 'player' && !this.sigilOffered && this.phaseStrikes > 0 && this.phaseHits === this.phaseStrikes &&
-        this.marks.every(m => m.done)) {
-        this.sigilOffered = true;
-        this.addRune('sigil', rand.pick(Object.keys(RUNES)), this.clock, runeTime(this.run, SIGIL_TIME));
-        this.pop('FLAWLESS!', G.W / 2, this.top + 14, '#f0d050');
-        sfx('rune');
-        if (this.hints) this.hint = 'DRAG ALONG THE SIGIL FOR A BONUS BLAST';
-      }
-      if (!this.over && (this.phase === 'player' || this.phase === 'enemy') && this.marks.length && this.marks.every(m => m.done)) this.endPhase();
-    }
+    if (this.phase === 'fight') this.updateFight();
+    else if (this.phase === 'rhythm') this.updateRhythm();
     for (const p of this.parts) {
       p.t += dt; p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt;
       if (p.floor && p.y > p.floor) { p.y = p.floor; p.vy *= -0.3; p.vx *= 0.6; }
@@ -580,7 +756,7 @@ export class Combat {
         const a = t * 4 + i * 2.1;
         g.drawImage(SPR.star, Math.round(x + fr.w / 2 + Math.cos(a) * 12 - 3), Math.round(y - 6 + Math.sin(a) * 3));
       }
-      if (fa.wind > 0.5 && this.phase === 'enemy') text(g, '!', x + fr.w / 2, y - 14, '#ff5050', { scale: 3, align: 'center', outline: '#140c1c' });
+      if (fa.wind > 0.5 && this.atk) text(g, '!', x + fr.w / 2, y - 14, '#ff5050', { scale: 3, align: 'center', outline: '#140c1c' });
     }
 
     if (!this.heroGone) {
@@ -604,7 +780,7 @@ export class Combat {
       }
       g.drawImage(SPR.hero, x, y, hr.w, hr.h);
       if (ha.hurt > 0.4) g.drawImage(silhouette(SPR.hero, '#ff4040'), x, y, hr.w, hr.h);
-      if (this.phase === 'enemy') {
+      if (this.atk) {
         g.globalAlpha = 0.5;
         g.drawImage(SPR.shield, x - 4, y + hr.h * 0.45, SPR.shield.width * 2, SPR.shield.height * 2);
         g.globalAlpha = 1;
@@ -619,6 +795,8 @@ export class Combat {
       g.globalAlpha = 1;
     }
 
+    if (this.phase === 'fight') this.drawDivider(g);
+    if (this.song && (this.phase === 'rhythm' || this.phase === 'pause')) this.drawRhythm(g);
     for (const m of this.marks) if (!m.done && m.kind !== 'rune') this.drawMark(g, m);
     for (const m of this.marks) if (!m.done && m.kind === 'rune' && this.clock >= m.spawnT) this.drawRuneMark(g, m);
     this.drawStroke(g);
@@ -678,6 +856,55 @@ export class Combat {
       ring(g, x, y, rr, close ? cols[1] : cols[0], close ? 2 : 1);
       g.globalAlpha = 1;
     }
+  }
+
+  // A faint split down the middle: left thumb defends, right thumb strikes.
+  drawDivider(g) {
+    const x = Math.round(G.W / 2);
+    g.fillStyle = 'rgba(255,251,234,0.10)';
+    for (let y = this.top + 18; y < this.barY - 16; y += 6) g.fillRect(x, y, 1, 3);
+    if (this.hints) {
+      text(g, 'DEFEND', G.W * 0.25, this.top + 18, '#70d0e0', { align: 'center', outline: '#140c1c' });
+      text(g, 'STRIKE', G.W * 0.75, this.top + 18, '#f0d050', { align: 'center', outline: '#140c1c' });
+    }
+  }
+
+  drawRhythm(g) {
+    const sg = this.song, W = G.W;
+    const { top, hitY, lw } = this.rhythmGeom();
+    g.globalAlpha = 0.62; g.fillStyle = '#07040c'; g.fillRect(0, top, W, this.barY - top - 2); g.globalAlpha = 1;
+    const beatPhase = ((this.clock - sg.start) % sg.beat + sg.beat) % sg.beat / sg.beat;
+    for (let l = 0; l < LANES; l++) {
+      const x0 = Math.round(l * lw), cx = Math.round((l + 0.5) * lw);
+      const fl = this.clock - sg.flash[l];
+      if (fl < 140) { g.globalAlpha = 0.22 * (1 - fl / 140); g.fillStyle = LANE_COL[l]; g.fillRect(x0, top, Math.round(lw), hitY - top + 12); g.globalAlpha = 1; }
+      if (l) { g.fillStyle = l === LANES / 2 ? '#4a3a5a' : '#2a1d33'; g.fillRect(x0, top, 1, this.barY - top - 2); }
+      disc(g, cx, hitY, 9, '#140c1c');
+      ring(g, cx, hitY, 9, LANE_COL[l], fl < 140 ? 2 : 1);
+      if (beatPhase < 0.15 && this.clock >= sg.start - sg.beat * 2) ring(g, cx, hitY, 11, 'rgba(255,251,234,0.35)');
+    }
+    g.fillStyle = 'rgba(255,251,234,0.35)'; g.fillRect(0, hitY, W, 1);
+    // Notes (chords are joined by a bar so both thumbs know to go together).
+    const span = hitY - top;
+    const chordAt = new Map();
+    for (const n of sg.notes) {
+      if (n.done) continue;
+      const k = (n.t - this.clock) / sg.fall;
+      if (k > 1) continue;
+      const y = Math.round(hitY - k * span), x = Math.round((n.lane + 0.5) * lw);
+      if (chordAt.has(n.t)) { const [ox] = chordAt.get(n.t); line(g, ox, y, x, y, '#fffbea', 1); } else chordAt.set(n.t, [x, y]);
+    }
+    for (const n of sg.notes) {
+      if (n.done) continue;
+      const k = (n.t - this.clock) / sg.fall;
+      if (k > 1) continue;
+      const y = Math.round(hitY - k * span), x = Math.round((n.lane + 0.5) * lw);
+      disc(g, x, y, 7, '#140c1c');
+      disc(g, x, y, 6, LANE_COL[n.lane]);
+      disc(g, x - 2, y - 2, 1, '#fffbea');
+    }
+    const prog = clamp((this.clock - sg.start) / (sg.end - sg.start), 0, 1);
+    ui.bar(g, 6, top - 5, W - 12, 2, prog, '#c070f0', '#2a1d33');
   }
 
   drawRuneMark(g, m) {
@@ -749,8 +976,9 @@ export class Combat {
       text(g, p.text, W / 2, this.top + 2, p.col, { align: 'center', scale: 2, outline: '#140c1c' });
       g.globalAlpha = 1;
     }
-    if (this.hint && this.hints && !this.over) {
-      text(g, this.hint, W / 2, this.barY - 24, '#c8b8d8', { align: 'center', outline: '#140c1c' });
+    const rhythmHint = this.phase === 'rhythm' && this.song && this.song.verse === 0;
+    if (this.hint && (this.hints || rhythmHint) && !this.over) {
+      text(g, this.hint, W / 2, this.phase === 'rhythm' ? this.top + 20 : this.barY - 24, '#c8b8d8', { align: 'center', outline: '#140c1c' });
     }
 
     ui.actionBar(g, run, {
