@@ -51,5 +51,5 @@ Run locally with any static server, e.g. `npx http-server .`, then open http://l
 
 ## Deploy
 
-`.github/workflows/pages.yml` publishes the site to GitHub Pages on every push.
-One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+`.github/workflows/pages.yml` builds the static site and publishes it to the `gh-pages` branch on every push.
+If the site isn't live yet, do this once: **Settings → Pages → Build and deployment → Source: Deploy from a branch → `gh-pages` / `(root)`**.
