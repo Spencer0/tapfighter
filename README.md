@@ -6,6 +6,8 @@ floors of graveyards, crypts and a cursed cathedral, then slay Lich Morthos.
 
 **Play:** https://spencer0.github.io/tapfighter/ (best on a phone; add it to your home screen for fullscreen)
 
+**Wiki:** https://spencer0.github.io/tapfighter/wiki/ (OSRS-wiki style guide to every monster, boss, weapon, item and formula; also linked from the title screen)
+
 ## How to play
 
 **Explore**: tap a tile to walk there. Tap chests, fountains, altars and merchants to use them.
@@ -46,10 +48,12 @@ Keyboard (desktop): arrows/WASD to step, `1` `2` `3` to swap weapons in battle, 
 | `src/dungeon.js` | procedural floor generation |
 | `src/data.js` | weapons, affixes, enemies, bosses, blessings, balance formulas |
 | `src/ui.js`, `src/font.js` | pixel UI kit and a 3x5 bitmap font |
+| `wiki/` | the wiki. It imports the game's own data and sprites, so its stats and pictures always match the game |
 
 Run locally with any static server, e.g. `npx http-server .`, then open http://localhost:8080.
 
 ## Deploy
 
-`.github/workflows/pages.yml` builds the static site and publishes it to the `gh-pages` branch on every push.
-If the site isn't live yet, do this once: **Settings → Pages → Build and deployment → Source: Deploy from a branch → `gh-pages` / `(root)`**.
+`.github/workflows/pages.yml` publishes the game and the wiki on every push.
+If the site shows a 404, turn Pages on once: **Settings → Pages → Build and deployment → Source: Deploy from a branch → `gh-pages` / `(root)` → Save**.
+(Choosing "GitHub Actions" as the source also works.)

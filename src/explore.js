@@ -14,7 +14,7 @@ import { rand } from './rng.js';
 import { saveGame, clearSave, recordRunEnd } from './state.js';
 import * as ui from './ui.js';
 import { Combat } from './combat.js';
-import { Title, howToDialog } from './title.js';
+import { Title, howToDialog, openWiki } from './title.js';
 
 const STEP = 0.12;
 const HW = TW / 2, HH = TH / 2;
@@ -548,6 +548,7 @@ export class Explore {
           { title: `Sound: ${settings.sfx ? 'ON' : 'OFF'}`, fn: () => { settings.sfx = !settings.sfx; saveSettings(); } },
           { title: `Music: ${settings.music ? 'ON' : 'OFF'}`, fn: () => { settings.music = !settings.music; saveSettings(); } },
           { title: 'How to play', fn: () => { self.closeModal(); self.pushModal(howToDialog(() => self.closeModal())); } },
+          { title: 'Open the wiki', desc: 'Your run is saved', fn: () => { self.save(); openWiki(); } },
           { title: 'Blessings', desc: Object.keys(run.bless).length ? Object.entries(run.bless).map(([k, n]) => `${k.toUpperCase()}${n > 1 ? ' X' + n : ''}`).join(', ') : 'None yet', fn: () => {} },
           { title: 'Abandon run', color: '#d04040', fn: () => self.confirmAbandon() },
         ];

@@ -1,35 +1,38 @@
-name: Deploy to GitHub Pages
+name: Deploy site
 
-# Publishes the static site to the gh-pages branch, which GitHub Pages serves.
-# If Pages is not live yet: Settings -> Pages -> Source: "Deploy from a branch" -> gh-pages / (root).
+# Publishes the game (/) and the wiki (/wiki/) to GitHub Pages.
+# Works with either Pages setting: "Deploy from a branch: gh-pages" or "GitHub Actions".
 on:
   push:
     branches: [main, master, "claude/**"]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
-  deploy:
+  gh-pages-branch:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Check JavaScript syntax
-        run: for f in src/*.js; do node --check "$f"; done
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp -r index.html style.css manifest.webmanifest icon.svg .nojekyll src _site/
-      - name: Publish to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
+      - run: mkdir _site && cp -r index.html style.css manifest.webmanifest icon.svg .nojekyll src wiki _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+      - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_site
-          publish_branch: gh-pages
           force_orphan: true
-          enable_jekyll: false
+
+  # Only succeeds when Settings > Pages > Source is "GitHub Actions"; harmless otherwise.
+  actions-pages:
+    needs: gh-pages-branch
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/deploy-pages@v4

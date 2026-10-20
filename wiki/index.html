@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tapfighter Wiki</title>
+<meta name="description" content="The official Tapfighter wiki: monsters, weapons, bosses, the merchant, blessings, formulas and strategy guides.">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Sans:ital,wght@0,400;0,700;1,400&family=PT+Serif:wght@400;700&display=swap">
+<link rel="stylesheet" href="wiki.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" id="menuBtn" aria-controls="sidebar" aria-expanded="false">Menu</button>
+  <a class="logo" href="#Main_Page" aria-label="Tapfighter Wiki home"><canvas id="logo" width="10" height="10"></canvas></a>
+  <form class="search" id="searchForm" role="search">
+    <input id="search" type="search" placeholder="Search Tapfighter Wiki" list="pageList" autocomplete="off" aria-label="Search">
+    <datalist id="pageList"></datalist>
+    <button type="submit">Go</button>
+  </form>
+  <a class="play" href="../">Play now</a>
+</header>
+<div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Wiki navigation"></nav>
+  <main>
+    <div class="tabs" aria-hidden="true">
+      <span class="tab active">Page</span><span class="tab">Discussion</span>
+      <span class="spacer"></span>
+      <span class="tab active">Read</span><span class="tab">View source</span><span class="tab">History</span>
+    </div>
+    <article id="content" class="content"></article>
+    <footer class="foot" id="foot"></footer>
+  </main>
+</div>
+<script type="module" src="wiki.js"></script>
+</body>
+</html>

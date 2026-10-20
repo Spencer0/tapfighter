@@ -10,6 +10,12 @@ import { makeBackdrop } from './backdrop.js';
 import * as ui from './ui.js';
 import { Explore } from './explore.js';
 
+// The wiki ships alongside the game at ./wiki/ (same tab so the autosave carries over).
+export function openWiki() {
+  sfx('tap');
+  location.href = new URL('wiki/', document.baseURI).href;
+}
+
 export function howToDialog(onClose) {
   return {
     title: 'HOW TO PLAY',
@@ -96,9 +102,10 @@ export class Title {
       ui.button(g, bx, by, bw, 22, 'NEW RUN', () => this.start(false), { primary: true });
     }
     by += 24;
-    const half = Math.floor((bw - 4) / 2);
-    ui.button(g, bx, by, half, 18, 'HOW TO', () => { this.modal = howToDialog(() => { this.modal = null; }); });
-    ui.button(g, bx + half + 4, by, half, 18, settings.music || settings.sfx ? 'SOUND ON' : 'SOUND OFF', () => {
+    const third = Math.floor((bw - 8) / 3);
+    ui.button(g, bx, by, third, 18, 'HOW TO', () => { this.modal = howToDialog(() => { this.modal = null; }); });
+    ui.button(g, bx + third + 4, by, third, 18, 'WIKI', openWiki, { color: '#f0d050' });
+    ui.button(g, bx + (third + 4) * 2, by, bw - (third + 4) * 2, 18, settings.music || settings.sfx ? 'SOUND' : 'MUTED', () => {
       const on = !(settings.music || settings.sfx);
       settings.music = on; settings.sfx = on; saveSettings();
     });
