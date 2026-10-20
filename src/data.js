@@ -194,7 +194,7 @@ export const ENEMIES = {
 export function scaleEnemy(type, depth) {
   const d = ENEMIES[type];
   const k = depth - 1;
-  const hp = Math.round(d.hp * (1 + 0.2 * k));
+  const hp = Math.round(d.hp * (1 + 0.5 * k)); // +50% of floor-1 HP per floor (linear)
   return { hp, maxHp: hp, dmg: Math.round(d.dmg * (1 + 0.11 * k)), armor: d.armor + Math.floor(depth / 6) };
 }
 

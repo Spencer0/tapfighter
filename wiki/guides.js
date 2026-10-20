@@ -171,7 +171,7 @@ ${h2('Damage you take')}
 blocked = round(hit × (1 − min(0.9, 0.6 + 0.15 × Iron Guard stacks)))
 feint   = round(hit × 0.6)</code>
 ${h2('Monster scaling')}
-<code class="formula">HP     = round(base HP × (1 + 0.20 × (floor − 1)))
+<code class="formula">HP     = round(base HP × (1 + 0.50 × (floor − 1)))
 damage = round(base dmg × (1 + 0.11 × (floor − 1)))
 armour = base armour + floor(floor / 6)
 XP     = round(base XP × (1 + 0.15 × (floor − 1)))
@@ -411,6 +411,7 @@ ${h2('Growth')}<p>He gains +4 max HP per level (see ${link('Experience')}), plus
 
   // ---------- Update history ----------
   page('Update_history', 'Update history', () => table(['Date', 'Update'], [
+    ['20 October 2026', '<b>Tougher monsters.</b> Monster HP now grows by +50% of its floor-1 value per floor (was +20%): ×1.5 on floor 2, ×3 on floor 5, ×8 on floor 15.'],
     ['20 October 2026', '<b>Two-thumb combat and rhythm duels.</b> Battles are no longer turn-based: you strike with your right thumb while defending with your left, and everything speeds up the deeper you go. New monsters, the <b>Bone Bard</b> and the <b>Banshee</b>, challenge you to four-lane rhythm duels, and every boss breaks into a rhythm encore at half health.'],
     ['20 October 2026', '<b>Runes, autoexplore and stair beacons.</b> Some monsters now cast <b>rune curses</b> you dispel by tracing the glyph, and flawless strike turns earn a <b>sigil</b> to trace for a bonus blast. New blessing: Rune Lore. An <b>AUTO</b> button explores the floor for you, and stairs are now marked with a light pillar, an off-screen pointer and a DESCEND button.'],
     ['20 October 2026', `<b>The Tapfighter Wiki</b> launches, with a WIKI button on the title screen and in the pause menu.`],

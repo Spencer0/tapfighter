@@ -240,7 +240,7 @@ export function buildPages(H) {
       const th = THEMES[Math.floor((f - 1) / 5)];
       return [f, link(THEME_PAGE[th.id], th.name), `${p.toFixed(1)}%`];
     }));
-    body += h2('Scaling') + `<p>Monster stats grow with the floor: HP by +20% per floor, damage by +11% per floor, and armour by +1 every 6 floors. See ${link('Damage_formula', 'Damage formula')}.</p>` + scaling;
+    body += h2('Scaling') + `<p>Monster stats grow with the floor: HP by +50% of its floor-1 value per floor, damage by +11% per floor, and armour by +1 every 6 floors. See ${link('Damage_formula', 'Damage formula')}.</p>` + scaling;
     body += h2('Drops');
     body += table(['Item', 'Quantity', 'Rarity'], [
       [`${coin} ${link('Coins')}`, goldAt(t, first).join('-') + ` (floor ${first})`, 'Always'],
