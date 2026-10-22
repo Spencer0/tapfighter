@@ -70,7 +70,6 @@ async function worker() {
       if (sc.modal) { idleTicks = 0; if (bot.handleModal(sc) === 'won') { out.won = true; break; } continue; }
       if (sc.inCombat) continue;
       const p = sc.player;
-      if (process.env.SIM_TRACE && G.time > MAX_GAME_SECONDS - 4) console.log('T', p.x, p.y, p.t, p.path.length, sc.autoGoal, JSON.stringify(p.path.slice(0, 3)), JSON.stringify(sc.ents.filter(e => e.kind === 'enemy' && Math.abs(e.x - p.x) < 8 && Math.abs(e.y - p.y) < 8).map(e => [e.type, e.x, e.y, e.awake, e.stun])));
       if (p.t < 1 || p.path.length || sc.auto) { idleTicks = 0; continue; }
       bot.exploreTick(sc);
       if (++idleTicks > 200 || (bot.stuck || 0) > 50) { out.killer = 'STUCK'; break; }
