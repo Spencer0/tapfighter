@@ -136,6 +136,24 @@ const F = t => ({ t, type: 'feint' });
 const O = (t, mul) => ({ t, type: 'orb', mul });
 const R = (t, runes) => ({ t, type: 'rune', runes });
 
+// Balance knobs in one place (tools/sim/sim.mjs can override any of them with --set key=value).
+export const BAL = {
+  foeHpPerFloor: 0.5, // monster HP grows by this share of its floor-1 HP each floor (linear)
+  foeDmgPerFloor: 0.48, // same for monster damage
+  foeDmg: 1, // flat multiplier on all monster damage
+  hpPerLevel: 4, // hero max HP gained per level
+  perfectMul: 1.5, // damage of a perfect strike or note
+  comboCap: 1, // most a combo can add to damage (1 = +100%)
+  guardPerfect: 95, // ms either side for a parry
+  guardGood: 190, // ms either side for a block
+  blockAbsorb: 0.6, // share of a hit a block soaks up (Iron Guard adds 15% each)
+  rhythmMiss: 0.25, // a missed note hurts for this share of the monster's damage
+  potionHeal: 0.4, // share of max HP a Life Bottle restores
+  potionCooldown: 1000, // ms between bottles in battle
+  potionDrop: 0.1, // chance a regular monster drops a bottle
+  potionCap: 5, // most Life Bottles you can carry; extras are left behind
+};
+
 // Battles run both sides at once; everything speeds up with depth (ring times, gaps, rests, songs).
 export const tempoAt = depth => Math.min(1.5, 1 + 0.03 * (depth - 1));
 export const HERO_REST = 450; // ms between your strike volleys (before tempo)
@@ -194,8 +212,8 @@ export const ENEMIES = {
 export function scaleEnemy(type, depth) {
   const d = ENEMIES[type];
   const k = depth - 1;
-  const hp = Math.round(d.hp * (1 + 0.5 * k)); // +50% of floor-1 HP per floor (linear)
-  return { hp, maxHp: hp, dmg: Math.round(d.dmg * (1 + 0.11 * k)), armor: d.armor + Math.floor(depth / 6) };
+  const hp = Math.round(d.hp * (1 + BAL.foeHpPerFloor * k));
+  return { hp, maxHp: hp, dmg: Math.round(d.dmg * BAL.foeDmg * (1 + BAL.foeDmgPerFloor * k)), armor: d.armor + Math.floor(depth / 6) };
 }
 
 // ---------- Blessings (level-up perks) ----------
@@ -225,11 +243,14 @@ export function pickBlessings(rng, run, n = 3) {
 export function applyBlessing(run, id) {
   run.bless[id] = (run.bless[id] || 0) + 1;
   if (id === 'vigor') { run.maxHp += 15; run.hp = Math.min(run.maxHp, run.hp + 15); }
-  if (id === 'bottle') run.potions += 2;
+  if (id === 'bottle') addPotions(run, 2);
 }
 
 export const xpNeed = level => Math.floor(16 + level * 12 + level * level * 2);
-export const potionHeal = run => Math.round(run.maxHp * 0.4 * (1 + 0.5 * (run.bless.alchemy || 0)));
+export const potionHeal = run => Math.round(run.maxHp * BAL.potionHeal * (1 + 0.5 * (run.bless.alchemy || 0)));
+export const potionRoom = run => Math.max(0, BAL.potionCap - run.potions);
+// Add bottles up to the carry cap; returns how many fit.
+export function addPotions(run, n = 1) { const k = Math.min(n, potionRoom(run)); run.potions += k; return k; }
 export const goldMul = run => 1 + 0.4 * (run.bless.greed || 0);
 
 // Grant XP; returns number of levels gained.
@@ -239,7 +260,7 @@ export function gainXp(run, xp) {
   while (run.xp >= xpNeed(run.level)) {
     run.xp -= xpNeed(run.level);
     run.level++; n++;
-    run.maxHp += 4; run.hp = Math.min(run.maxHp, run.hp + 4);
+    run.maxHp += BAL.hpPerLevel; run.hp = Math.min(run.maxHp, run.hp + BAL.hpPerLevel);
   }
   run.levelUps = (run.levelUps || 0) + n;
   return n;

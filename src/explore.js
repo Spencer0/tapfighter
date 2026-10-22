@@ -7,7 +7,7 @@ import { TW, TH, WH, getTiles } from './tiles.js';
 import { generate, MW, MH, FLOOR } from './dungeon.js';
 import {
   ENEMIES, themeFor, isBossFloor, FINAL_DEPTH, makeWeapon, weaponName, RARITY,
-  potionHeal, goldMul, pickBlessings, applyBlessing, scaleEnemy,
+  potionHeal, goldMul, pickBlessings, applyBlessing, scaleEnemy, addPotions, potionRoom,
 } from './data.js';
 import { sfx, playMusic, settings, saveSettings } from './audio.js';
 import { rand } from './rng.js';
@@ -251,7 +251,7 @@ export class Explore {
     this.computeFov();
     if (this.auto) {
       const seen = this.ents.find(e => e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)] && !this.autoSeen.has(e.id));
-      if (seen) { this.stopAuto(`${ENEMIES[seen.type].name} spotted!`, '#ff6050'); seen.alert = Math.max(seen.alert || 0, 0.6); }
+      if (seen) { this.autoSeen.add(seen.id); this.stopAuto(`${ENEMIES[seen.type].name} spotted!`, '#ff6050'); seen.alert = Math.max(seen.alert || 0, 0.6); }
     }
     const last = p.path.length === 0;
     if (last) this.target = null;
@@ -267,7 +267,8 @@ export class Explore {
       run.gold += amt; this.remove(e); sfx('coin');
       this.floatText('+' + amt, e.x, e.y, '#f0d050');
     } else if (e.kind === 'potion') {
-      run.potions++; this.remove(e); sfx('pickup');
+      if (!potionRoom(run)) { if (isDest) this.say('Your bottle belt is full.', '#a898b0'); return; }
+      addPotions(run); this.remove(e); sfx('pickup');
       this.say('Found a Life Bottle!', '#d04040');
       this.floatText('+1', e.x, e.y, '#d04040');
     } else if (e.kind === 'weapon') {
@@ -392,7 +393,8 @@ export class Explore {
         const amt = Math.round((rand.int(12, 25) + run.depth * 4) * goldMul(run));
         run.gold += amt; this.floatText('+' + amt, e.x, e.y, '#f0d050'); this.say(`Found ${amt} gold.`, '#f0d050');
       } else if (r < 0.65) {
-        run.potions++; this.floatText('+1', e.x, e.y, '#d04040'); this.say('Found a Life Bottle!', '#d04040');
+        if (addPotions(run)) { this.floatText('+1', e.x, e.y, '#d04040'); this.say('Found a Life Bottle!', '#d04040'); }
+        else this.say('A Life Bottle, but your belt is full.', '#a898b0');
       } else {
         const w = makeWeapon(rand, run.depth, null, rand.chance(0.5) ? Math.max(1, rand.int(1, 2)) : null);
         this.pushModal(this.weaponDialog(w, null));
@@ -437,7 +439,10 @@ export class Explore {
     if (this.auto) { this.stopAuto('Autoexplore off.', '#a898b0'); return; }
     if (this.modal || this.inCombat) return;
     this.auto = true; this.autoGoal = null;
-    this.autoSeen = new Set(this.ents.filter(e => e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)]).map(e => e.id));
+    // Monsters already announced stay announced for the floor, so one pacing behind a wall
+    // doesn't stop AUTO every time it steps back into view.
+    if (!this.autoSeen || this.autoSeenFloor !== this.floorSeed) { this.autoSeen = new Set(); this.autoSeenFloor = this.floorSeed; }
+    for (const e of this.ents) if (e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)]) this.autoSeen.add(e.id);
     sfx('tap');
     if (this.player.t >= 1) this.autoStep();
   }
@@ -451,6 +456,9 @@ export class Explore {
 
   autoStep() {
     const p = this.player;
+    // Finish the current route before picking a new goal: replanning every step lets a monster
+    // shuffling in a doorway flip the plan back and forth forever.
+    if (p.path.length) return;
     const found = this.autoPath();
     if (!found) {
       const stairs = this.ents.find(e => e.kind === 'stairs' && this.explored[this.idx(e.x, e.y)]);
@@ -476,7 +484,7 @@ export class Explore {
     const goals = new Map();
     for (const e of this.ents) {
       if (!this.explored[this.idx(e.x, e.y)]) continue;
-      const take = e.kind === 'gold' || e.kind === 'potion' || (e.kind === 'chest' && !e.opened) ||
+      const take = e.kind === 'gold' || (e.kind === 'potion' && potionRoom(run)) || (e.kind === 'chest' && !e.opened) ||
         (e.kind === 'fountain' && !e.used && run.hp < run.maxHp * 0.6);
       if (take) goals.set(this.idx(e.x, e.y), e.kind);
     }
@@ -610,7 +618,7 @@ export class Explore {
           return {
             title: s.sold ? t + ' (SOLD)' : t, desc, right: s.sold ? '' : String(s.price), icon,
             color: s.kind === 'weapon' ? RARITY[s.weapon.rarity].color : '#e8e0c8',
-            disabled: s.sold || run.gold < s.price,
+            disabled: s.sold || run.gold < s.price || (s.kind === 'potion' && !potionRoom(run)),
             fn: () => self.buy(e, s),
           };
         });
@@ -622,10 +630,10 @@ export class Explore {
 
   buy(e, s) {
     const run = this.run;
-    if (s.sold || run.gold < s.price) return;
+    if (s.sold || run.gold < s.price || (s.kind === 'potion' && !potionRoom(run))) return;
     run.gold -= s.price; s.sold = true; sfx('buy');
     this.modal.buttons[0].label = `LEAVE (${run.gold}G)`;
-    if (s.kind === 'potion') run.potions++;
+    if (s.kind === 'potion') addPotions(run);
     else if (s.kind === 'elixir') { run.maxHp += 10; run.hp += 10; }
     else if (s.kind === 'blessing') { this.queue.unshift(this.modal); this.modal = this.blessingDialog('BLESSING', 'Choose wisely'); }
     else if (s.kind === 'weapon') { this.queue.unshift(this.modal); this.modal = this.weaponDialog(s.weapon, null); }

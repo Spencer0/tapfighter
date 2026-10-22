@@ -9,7 +9,7 @@ import { SPR, weaponIcon } from './sprites.js';
 import { disc, ring, ellipse, line, silhouette, pixelsOf, clamp, lerp } from './gfx.js';
 import {
   ENEMIES, weaponStats, potionHeal, gainXp, goldMul, makeWeapon, weaponName, RARITY, RUNE_TIME, SIGIL_TIME, runeTime,
-  tempoAt, HERO_REST, FOE_REST, DOT_TICK,
+  tempoAt, HERO_REST, FOE_REST, DOT_TICK, BAL, addPotions,
 } from './data.js';
 import { RUNES, gradeRune, drawRune } from './runes.js';
 import { LANES, LANE_COL, RHYTHM_PERFECT, RHYTHM_GOOD, makeSong } from './rhythm.js';
@@ -211,7 +211,7 @@ export class Combat {
         if (h.type === 'feint') hasFeint = true; else a.guards++;
         const [x, y] = this.spot(zone, hitT, lead, null, 'L');
         add({ kind: h.type, x, y, hitT, lead, spawnT: hitT - lead, vx: 0, vy: 0, dmg,
-          perfect: 95 + 25 * (B.steady || 0), good: 190 + 35 * (B.keen || 0), done: false });
+          perfect: BAL.guardPerfect + 25 * (B.steady || 0), good: BAL.guardGood + 35 * (B.keen || 0), done: false });
       }
     }
     this.prompt(atk.name.toUpperCase() + (enraged ? '!!' : '!'), '#ff6050');
@@ -316,7 +316,7 @@ export class Combat {
       this.combo = 0;
       const { hitY, lw } = this.rhythmGeom();
       this.pop('MISS', (n.lane + 0.5) * lw, hitY - 14, '#8a7a9a');
-      this.hurt(Math.max(1, Math.round(this.foe.dmg * 0.25)), true);
+      this.hurt(Math.max(1, Math.round(this.foe.dmg * BAL.rhythmMiss)), true);
       if (this.over) return;
     }
     if (this.clock > sg.end + RHYTHM_GOOD + 400 && sg.notes.every(n => n.done)) this.endSong();
@@ -358,8 +358,8 @@ export class Combat {
     this.combo++;
     this.run.bestCombo = Math.max(this.run.bestCombo || 0, this.combo);
     const s = (this.ws = weaponStats(this.run.weapons[this.run.equipped], this.run));
-    const comboMul = 1 + Math.min(1, this.combo * 0.04 * (1 + 0.5 * (B.combo || 0)));
-    const dmg = Math.max(1, Math.round(s.dmg * 0.2 * (perfect ? 1.5 : 1) * comboMul * (this.def.boss ? s.boss : 1)));
+    const comboMul = 1 + Math.min(BAL.comboCap, this.combo * 0.04 * (1 + 0.5 * (B.combo || 0)));
+    const dmg = Math.max(1, Math.round(s.dmg * 0.2 * (perfect ? BAL.perfectMul : 1) * comboMul * (this.def.boss ? s.boss : 1)));
     const cx = (lane + 0.5) * lw;
     tone(best.midi);
     this.burst(cx, hitY, LANE_COL[lane], perfect ? 10 : 6, 70);
@@ -448,7 +448,7 @@ export class Combat {
       this.damageFoe(Math.max(1, Math.round(m.dmg * 0.6 * (perfect ? 1.5 : 1) * lore)), '#ff90d0', null, 'BACKLASH');
     } else {
       const s = this.ws || weaponStats(this.run.weapons[this.run.equipped], this.run);
-      const comboMul = 1 + Math.min(1, this.combo * 0.06 * (1 + 0.5 * (B.combo || 0)));
+      const comboMul = 1 + Math.min(BAL.comboCap, this.combo * 0.06 * (1 + 0.5 * (B.combo || 0)));
       const dmg = Math.round(s.dmg * 1.25 * (perfect ? 1.5 : 1) * comboMul * lore * (this.def.boss ? s.boss : 1));
       this.pop(perfect ? 'PERFECT SIGIL!' : 'SIGIL BLAST!', m.x, m.y - m.size / 2 - 8, '#f0d050', perfect ? 2 : 1);
       sfx('sigil');
@@ -509,8 +509,8 @@ export class Combat {
     m.group.hits++;
     this.combo++;
     run.bestCombo = Math.max(run.bestCombo || 0, this.combo);
-    const comboMul = 1 + Math.min(1, this.combo * 0.06 * (1 + 0.5 * (B.combo || 0)));
-    let dmg = s.dmg * (perfect ? 1.5 : 1) * (m.crit ? 1.4 : 1) * comboMul * (this.def.boss ? s.boss : 1);
+    const comboMul = 1 + Math.min(BAL.comboCap, this.combo * 0.06 * (1 + 0.5 * (B.combo || 0)));
+    let dmg = s.dmg * (perfect ? BAL.perfectMul : 1) * (m.crit ? 1.4 : 1) * comboMul * (this.def.boss ? s.boss : 1);
     if (!s.pierce) dmg -= this.foe.armor;
     dmg = Math.max(1, Math.round(dmg));
     this.heroA.lunge = 1; this.heroA.swing = 1;
@@ -542,7 +542,7 @@ export class Combat {
       sfx('parry'); shake(2);
       this.damageFoe(counter, '#70d0e0', null);
     } else if (grade === 'good') {
-      const red = Math.min(0.9, 0.6 + 0.15 * (B.guard || 0));
+      const red = Math.min(0.9, BAL.blockAbsorb + 0.15 * (B.guard || 0));
       this.pop('BLOCK', p.x, p.y - 12, '#a8b4c0');
       sfx('block');
       this.hurt(Math.max(1, Math.round(m.dmg * (1 - red))), true);
@@ -611,7 +611,7 @@ export class Combat {
     let drop = null, potion = false;
     if (this.def.boss) drop = makeWeapon(rand, depth + 1, null, rand.chance(0.35) ? 3 : 2);
     else if (rand.chance(0.1)) drop = makeWeapon(rand, depth);
-    if (rand.chance(this.def.boss ? 1 : 0.15)) { potion = true; run.potions++; }
+    if (rand.chance(this.def.boss ? 1 : BAL.potionDrop) && addPotions(run)) potion = true;
     this.rewards = { xp, gold, levels, drop, potion };
     this.after(900, () => { this.canLeave = true; });
   }
@@ -654,7 +654,7 @@ export class Combat {
     const run = this.run;
     if (this.over || run.potions <= 0 || run.hp >= run.maxHp || this.clock < this.potionReady) { sfx('deny'); return; }
     run.potions--;
-    this.potionReady = this.clock + 1000;
+    this.potionReady = this.clock + BAL.potionCooldown;
     this.healHero(potionHeal(run));
     sfx('potion');
     const hr = this.heroRect();

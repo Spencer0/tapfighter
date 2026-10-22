@@ -1,6 +1,6 @@
 // Wiki page content. Stats are computed from ../src/data.js; prose is hand-written.
 import {
-  THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, scaleEnemy, xpNeed, weaponStats, tempoAt,
+  THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, scaleEnemy, xpNeed, weaponStats, tempoAt, BAL,
 } from '../src/data.js';
 import { RUNES } from '../src/runes.js';
 import { SPR, weaponIcon } from '../src/sprites.js';
@@ -240,11 +240,11 @@ export function buildPages(H) {
       const th = THEMES[Math.floor((f - 1) / 5)];
       return [f, link(THEME_PAGE[th.id], th.name), `${p.toFixed(1)}%`];
     }));
-    body += h2('Scaling') + `<p>Monster stats grow with the floor: HP by +50% of its floor-1 value per floor, damage by +11% per floor, and armour by +1 every 6 floors. See ${link('Damage_formula', 'Damage formula')}.</p>` + scaling;
+    body += h2('Scaling') + `<p>Monster stats grow with the floor: HP by +${Math.round(BAL.foeHpPerFloor * 100)}% of its floor-1 value per floor, damage by +${Math.round(BAL.foeDmgPerFloor * 100)}% of its floor-1 value per floor, and armour by +1 every 6 floors. See ${link('Damage_formula', 'Damage formula')}.</p>` + scaling;
     body += h2('Drops');
     body += table(['Item', 'Quantity', 'Rarity'], [
       [`${coin} ${link('Coins')}`, goldAt(t, first).join('-') + ` (floor ${first})`, 'Always'],
-      [`${potion()} ${link('Life_Bottle', 'Life Bottle')}`, 1, isBoss ? 'Always' : '15%'],
+      [`${potion()} ${link('Life_Bottle', 'Life Bottle')}`, 1, isBoss ? 'Always' : `${Math.round(BAL.potionDrop * 100)}%`],
       [`${wicon('sword')} Random weapon`, 1, isBoss ? 'Always (Epic 65% / Legendary 35%, level floor+1)' : '10%'],
     ]);
     if (MON[t].trivia) body += h2('Trivia') + `<ul><li>${MON[t].trivia}</li></ul>`;
