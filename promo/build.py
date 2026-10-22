@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Assemble the 12s Tapfighter TikTok from recorded scene frames.
+"""Assemble a Tapfighter TikTok from recorded scene frames.
 
-  python3 build.py <frames_dir> <piper_voice.onnx> <out.mp4>
+  python3 build.py <frames_dir> <piper_voice.onnx> <out.mp4> [v1|v2]
 
-frames_dir holds s1..s4 (see record.sh). Voice is Piper TTS; music and SFX are synthesized here.
+frames_dir holds one folder per scene (see record.sh and VARIANTS). Voice is Piper TTS; music and SFX are synthesized here.
 """
 import json, subprocess, sys, wave
 from pathlib import Path
@@ -11,17 +11,24 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 FRAMES, VOICE, OUT = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+VARIANT = sys.argv[4] if len(sys.argv) > 4 else "v1"
 SR, FPS, W, H = 44100, 60, 1080, 1920
-# (scene dir, start s, length s)
-SCENES = [("s1", 0.0, 2.7), ("s2", 2.7, 2.6), ("s3", 5.3, 2.8), ("s4", 8.1, 3.9)]
-TOTAL = 12.0
-# (caption text, voice start s, latest end s)
-LINES = [
-    ("HARDEST GAME EVER?", 0.12, 2.55),
-    ("IMPOSSIBLE?", 2.82, 5.2),
-    ("TOO EASY?", 5.42, 7.9),
-    ("PLAY TODAY! LINK IN DESCRIPTION!", 8.2, 11.9),
-]
+# Per video: scene dirs (name, start s, length s), total length, caption lines (text, voice start s, latest end s;
+# "/" breaks a caption row), when the title banner shows, and the music tempo.
+VARIANTS = {
+    "v1": dict(  # "Hardest game ever?"
+        scenes=[("s1", 0.0, 2.7), ("s2", 2.7, 2.6), ("s3", 5.3, 2.8), ("s4", 8.1, 3.9)], total=12.0, banner=8.1, bpm=150,
+        lines=[("HARDEST GAME/EVER?", 0.12, 2.55), ("IMPOSSIBLE?", 2.82, 5.2), ("TOO EASY?", 5.42, 7.9),
+               ("PLAY TODAY!/LINK IN DESCRIPTION!", 8.2, 11.9)]),
+    "v2": dict(  # "Can you master this timing?"
+        scenes=[("s1", 0.0, 10.0), ("s2", 10.0, 3.0)], total=13.0, banner=10.0, bpm=125,
+        lines=[("CAN YOU MASTER/THIS TIMING?", 0.2, 2.9), ("PLAY NOW IN/YOUR BROWSER!/LINK IN BIO/AND COMMENTS", 10.1, 12.9)],
+        hold=[3.6, None], backing=[False, True]),
+}
+V = VARIANTS[VARIANT]
+SCENES, TOTAL, LINES = V["scenes"], V["total"], V["lines"]
+HOLD = V.get("hold", [None] * len(LINES))      # caption stays up until this time (default: next line)
+BACKING = V.get("backing", [False] * len(LINES))   # dark panel behind a caption
 BG, FONT_PATH = "#07040c", "/usr/share/fonts/opentype/inter/Inter-Black.otf"
 YELLOW, WHITE = (255, 214, 0), (255, 255, 255)
 
@@ -33,7 +40,7 @@ def synth_lines():
     cfg = SynthesisConfig(length_scale=0.92, noise_scale=0.8, noise_w_scale=0.9)
     out = []
     for text, start, end in LINES:
-        chunks = [c.audio_float_array for c in v.synthesize(text.capitalize(), cfg)]
+        chunks = [c.audio_float_array for c in v.synthesize(text.replace('/', ' ').capitalize(), cfg)]
         a = np.concatenate(chunks).astype(np.float32)
         sr = v.config.sample_rate
         # trim silence
@@ -98,10 +105,17 @@ SFX = {
     "win":    lambda: arp([523, 659, 784, 1047], 0.07, 0.3, "sq", 0.12, 0.4),
     "coin":   lambda: arp([988, 1319], 0.07, 0.2, "sq", 0.08, 0.4),
     "loot":   lambda: arp([659, 784, 988, 1319, 1568], 0.06, 0.25, "sine", 0.15, 0.35),
+    "parry":  lambda: mix(0.5 * noise(0.1, 0.03, 7), 0.5 * tone(1760, 0.25, "sq", 0.07), 0.3 * tone(2637, 0.2, "sine", 0.06)),
+    "smash":  lambda: mix(0.5 * noise(0.1, 0.04, 8), 0.6 * sweep(600, 200, 0.12, "sine", 0.05)),
+    "miss":   lambda: 0.5 * sweep(200, 110, 0.18, "saw", 0.08),
+    "buy":    lambda: arp([1175, 1568, 2349], 0.05, 0.18, "sq", 0.07, 0.35),
+    "rise":   lambda: 0.5 * sweep(150, 900, 0.7, "saw", 0.5) * np.linspace(0.1, 1, int(0.7 * SR)),
     "whoosh": lambda: 0.5 * noise(0.22, 0.12, 6) * np.linspace(0.2, 1, int(0.22 * SR)),
 }
 CUES = {"PERFECT!": "hit", "GOOD": "hit", "CRITICAL!": "crit", "FIZZLE - AGAIN!": "fizzle", "CURSED!": "curse",
-        "DEFEAT": "death", "VICTORY": "win", "COIN": "coin", "LOOT": "loot", "DIALOG": "whoosh"}
+        "DEFEAT": "death", "VICTORY": "win", "COIN": "coin", "LOOT": "loot", "DIALOG": "whoosh",
+        "PARRY!": "parry", "SMASH!": "smash", "MISS": "miss", "BUY": "buy", "RHYTHM": "rise", "BURN": None}
+PENTA = [57, 60, 62, 64, 67, 69, 72, 69, 67, 64]     # A minor pentatonic, for rhythm-note plucks
 
 
 def put(track, sound, t, gain=1.0):
@@ -112,9 +126,9 @@ def put(track, sound, t, gain=1.0):
     track[i:i + len(s)] += s * gain
 
 
-def music():
+def music(bpm):
     m = np.zeros(int(TOTAL * SR) + SR)
-    bpm = 150; beat = 60 / bpm
+    beat = 60 / bpm
     root = [55.0, 55.0, 65.41, 49.0]            # A1 A1 C2 G1: dark, driving
     for b in range(int(TOTAL / beat) + 1):
         t = b * beat
@@ -130,10 +144,15 @@ def music():
 
 def build_audio():
     voice = synth_lines()
-    track = music() * 0.55
+    notes_hit = 0
+    track = music(V['bpm']) * 0.55
     for scene, t0, _ in SCENES:
         put(track, SFX["whoosh"](), t0 - 0.03 if t0 else 0, 1.0)
         for e in json.load(open(FRAMES / scene / "events.json")):
+            if e["text"] in ("PERFECT", "GOOD"):           # rhythm note: a pluck in key
+                midi = PENTA[notes_hit % len(PENTA)]; notes_hit += 1
+                put(track, 0.5 * tone(440 * 2 ** ((midi - 69) / 12), 0.3, "sq", 0.12) + 0.3 * tone(440 * 2 ** ((midi - 81) / 12), 0.3, "sine", 0.15), t0 + e["t"])
+                continue
             k = CUES.get(e["text"])
             if k:
                 put(track, SFX[k](), t0 + e["t"], 0.9)
@@ -155,77 +174,60 @@ def build_audio():
 
 # ---------- captions ---------------------------------------------------------------------------
 def word_times(voice):
-    """Spread each line's words over its voice span in proportion to word length."""
-    out = []
+    """Spread each line's words over its voice span in proportion to word length.
+    Returns, per line, a list of rows; each row is a list of (word, start, end)."""
+    groups = []
     for (text, start, _), a in zip(LINES, voice):
-        words = text.split(); dur = len(a) / SR
-        w = np.array([len(x.strip("?!")) + 1.5 for x in words]); w = w / w.sum() * dur
-        t = start
-        for word, d in zip(words, w):
-            out.append((word, t, t + d)); t += d
-    print("voice spans:", [(w, round(a, 2), round(b, 2)) for w, a, b in out])
-    return out
-
-
-def caption_groups(words):
-    """Group words into on-screen lines of caption (one line of speech at a time, split in two rows)."""
-    groups, i = [], 0
-    for (text, start, end) in LINES:
-        n = len(text.split())
-        groups.append(words[i:i + n]); i += n
+        rows = [r.split() for r in text.split("/")]
+        flat = [w for r in rows for w in r]
+        dur = len(a) / SR
+        w = np.array([len(x.strip("?!")) + 1.5 for x in flat]); w = w / w.sum() * dur
+        t, i, out = start, 0, []
+        for r in rows:
+            row = []
+            for word in r:
+                row.append((word, t, t + w[i])); t += w[i]; i += 1
+            out.append(row)
+        groups.append(out)
     return groups
 
 
-def draw_caption(img, group, until, t, fonts):
+def draw_caption(img, rows, until, t, fonts, backing=False):
     # visible from the first word until the next line starts (the last one holds to the end)
-    if not (group[0][1] - 0.02 <= t < until):
+    if not (rows[0][0][1] - 0.02 <= t < until):
         return
     d = ImageDraw.Draw(img)
-    # break into rows: "PLAY TODAY!" / "LINK IN DESCRIPTION!" style, or by half
-    ws = [g[0] for g in group]
-    if len(ws) <= 2:
-        rows = [list(range(len(ws)))]
-    else:
-        rows, cur = [], []
-        for k, w in enumerate(ws):
-            cur.append(k)
-            if w.endswith("!") and k < len(ws) - 1 and not rows:
-                rows.append(cur); cur = []
-        rows.append(cur)
-        if len(rows) == 1:
-            half = (len(ws) + 1) // 2
-            rows = [list(range(half)), list(range(half, len(ws)))]
-    big = len(ws) <= 3
-    y = 1120 if big else 1090
-    for row in rows:
-        size = 190 if big else 112
-        sizes = []
-        for k in row:
-            start = group[k][1]
-            active = group[k][1] <= t
-            age = max(0.0, t - start)
-            pop = 1 + 0.28 * max(0.0, 1 - age / 0.12) if active else 1
-            sizes.append(pop)
-        fnt = [fonts(int(size * s)) for s in sizes]
-        gap = int(size * 0.28)
-        widths = [d.textlength(ws[k], font=fnt[j]) for j, k in enumerate(row)]
-        total = sum(widths) + gap * (len(row) - 1)
-        while total > W - 120:                      # shrink to fit width
-            size -= 6
-            fnt = [fonts(int(size * s)) for s in sizes]
-            widths = [d.textlength(ws[k], font=fnt[j]) for j, k in enumerate(row)]
+    nwords = sum(len(r) for r in rows)
+    base = 190 if nwords <= 3 else 120 if len(rows) <= 2 else 104
+    heights = [int(base * 1.12)] * len(rows)
+    y = 1130 - sum(heights) // 2
+    if backing:
+        panel = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(panel).rounded_rectangle((70, y - 24, W - 70, y + sum(heights) + 16), 36, fill=(8, 4, 16, 235))
+        img.paste(panel, (0, 0), panel)
+        d = ImageDraw.Draw(img)
+    for row, hgt in zip(rows, heights):
+        size = base
+        pops = [1 + 0.28 * max(0.0, 1 - (t - w[1]) / 0.12) if w[1] <= t else 1 for w in row]
+        while True:
+            fnt = [fonts(int(size * p)) for p in pops]
+            widths = [d.textlength(w[0], font=f) for w, f in zip(row, fnt)]
+            gap = int(size * 0.28)
             total = sum(widths) + gap * (len(row) - 1)
+            if total <= W - 120:
+                break
+            size -= 6
         x = (W - total) / 2
-        for j, k in enumerate(row):
-            if group[k][1] <= t:                     # words appear as they are spoken
-                col = YELLOW if t < group[k][2] else WHITE
-                d.text((x, y + int(size * 0.5)), ws[k], font=fnt[j], fill=col, anchor="lm", stroke_width=max(8, size // 11), stroke_fill=(0, 0, 0))
-            x += widths[j] + gap
-        y += int(size * 1.12)
+        for w, f, wd in zip(row, fnt, widths):
+            if w[1] <= t:                              # words appear as they are spoken
+                col = YELLOW if t < w[2] else WHITE
+                d.text((x, y + hgt // 2), w[0], font=f, fill=col, anchor="lm", stroke_width=max(8, size // 11), stroke_fill=(0, 0, 0))
+            x += wd + gap
+        y += hgt
 
 
 def banner(img, t):
-    if t < 8.1:
+    if t < V['banner']:
         return
     d = ImageDraw.Draw(img)
     f = ImageFont.truetype(FONT_PATH, 64)
@@ -237,7 +239,7 @@ def banner(img, t):
 def main():
     wav, voice = build_audio()
     words = word_times(voice)
-    groups = caption_groups(words)
+    groups = words
     cache = {}
     fonts = lambda s: cache.setdefault(s, ImageFont.truetype(FONT_PATH, s))
     ff = subprocess.Popen(["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
@@ -249,8 +251,9 @@ def main():
         sc = next(s for s in reversed(SCENES) if t >= s[1] - 1e-9)
         fi = min(int(round((t - sc[1]) * FPS)), int(sc[2] * FPS) - 1)
         img = Image.open(FRAMES / sc[0] / f"f{fi:04d}.png").convert("RGB").resize((W, H), Image.NEAREST)
-        for g, nxt in zip(groups, groups[1:] + [None]):
-            draw_caption(img, g, nxt[0][1] - 0.02 if nxt else TOTAL + 1, t, fonts)
+        for g, nxt, hold, bk in zip(groups, groups[1:] + [None], HOLD, BACKING):
+            until = nxt[0][0][1] - 0.02 if nxt else TOTAL + 1
+            draw_caption(img, g, min(until, hold) if hold else until, t, fonts, bk)
         banner(img, t)
         ff.stdin.write(img.tobytes())
     ff.stdin.close(); ff.wait()

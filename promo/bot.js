@@ -201,6 +201,101 @@ window.TFPromo = (() => {
     } };
   };
 
+
+  // Trace a rune's glyph through the game's own template points (pts in unit box).
+  async function glyph(m, wob = 0.02, per = 6) {
+    const R = (await import('/src/runes.js')).RUNES[m.rune].pts, out = [];
+    for (let i = 1; i < R.length; i++) for (let k = 0; k < per; k++) {
+      const a = R[i - 1], b = R[i], f = k / per;
+      out.push([m.x + (a[0] + (b[0] - a[0]) * f - 0.5 + (Math.random() - 0.5) * wob) * m.size, m.y + (a[1] + (b[1] - a[1]) * f - 0.5 + (Math.random() - 0.5) * wob) * m.size]);
+    }
+    return out;
+  }
+
+  // 5) First boss (Pumpkin King): a clean fight, then the rhythm encore takes you down.
+  scenes.pumpkin = async function () {
+    const { rand } = M.rng, { makeWeapon } = M.data;
+    const run = makeRun({
+      depth: 5, level: 6, hp: 30, maxHp: 80, kills: 14, gold: 210, bless: { steady: 1, keen: 1 },
+      weapons: [makeWeapon(rand, 5, 'sword', 2), makeWeapon(rand, 5, 'dagger', 1)],
+    });
+    const ex = new M.explore.Explore(run);
+    const ent = ex.ents.find(e => e.boss);
+    const c = startCombat(run, ent, ex);
+    c.foe.hp = c.foe.ghost = Math.round(c.foe.maxHp * 0.5) + (window.__PK_OVER ?? 70);
+    return { c, skip: 0.9, bot(c, st) {
+      st.n ??= 0;
+      const G = M.engine.G;
+      if (c.phase === 'fight') {
+        for (const m of c.marks) {
+          if (m.done) continue;
+          if ((m.kind === 'strike' || m.kind === 'guard') && c.clock >= m.hitT - 8) { const p = c.markPos(m, c.clock); tap(p.x, p.y); }
+          else if (m.kind === 'orb' && c.clock >= m.hitT - 260) { const p = c.markPos(m, c.clock); tap(p.x, p.y); }
+        }
+      }
+      if (c.phase === 'rhythm') {
+        const sg = c.song;
+        if (!st.rh) {
+          st.rh = true;
+          const cut = window.__PK_CUT ?? 1300;               // shorten the count-in
+          sg.start -= cut; sg.end -= cut; sg.notes.forEach(n => { n.t -= cut; });
+          c.foe.dmg = Math.round(c.foe.dmg * (window.__PK_DMGX ?? 3));     // bard-tier misses sting
+        }
+        const { hitY, lw } = c.rhythmGeom();
+        const keep = window.__PK_KEEP ?? 5;                  // how many notes you hit before it falls apart
+        sg.notes.forEach((n, i) => {
+          if (n.done || st.tapped?.has(n)) return;
+          if (c.clock >= n.t - 8) {
+            (st.tapped ??= new Set()).add(n);
+            const idx = (st.idx = (st.idx || 0) + 1);
+            if (idx <= keep || idx % 4 === 0) tap((n.lane + 0.5) * lw, hitY);
+          }
+        });
+      }
+    } };
+  };
+
+  // 6) Walk the map and shop with the merchant.
+  scenes.shop = async function () {
+    const { rand } = M.rng, { makeWeapon } = M.data;
+    const run = makeRun({ depth: 3, level: 5, hp: 55, maxHp: 60, gold: 320, weapons: [makeWeapon(rand, 3, 'sword', 1), makeWeapon(rand, 3, 'dagger', 0)], bless: { steady: 1 } });
+    const ex = new M.explore.Explore(run);
+    ex.ents = ex.ents.filter(e => e.kind === 'stairs');
+    ex.banner = null;
+    const LEN = +(window.__SHOP_LEN ?? 9), p0 = ex.player, key = (x, y) => y * 64 + x;
+    const prev = new Map([[key(p0.x, p0.y), null]]), dist = new Map([[key(p0.x, p0.y), 0]]);
+    const q = [[p0.x, p0.y]], ends = [];
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    while (q.length) {
+      const [x, y] = q.shift(), d = dist.get(key(x, y));
+      if (d === LEN) { ends.push([x, y]); continue; }
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (!ex.passable(nx, ny) || prev.has(key(nx, ny)) || !ex.canStep(x, y, nx, ny)) continue;
+        prev.set(key(nx, ny), [x, y]); dist.set(key(nx, ny), d + 1); q.push([nx, ny]);
+      }
+    }
+    const trace = end => { const p = []; for (let c = end; c && key(...c) !== key(p0.x, p0.y); c = prev.get(key(...c))) p.unshift(c); return p; };
+    const open = p => p.reduce((a, [x, y]) => a + dirs.filter(([dx, dy]) => ex.passable(x + dx, y + dy)).length, 0);
+    const path = ends.map(trace).sort((a, b) => open(b) - open(a))[0];
+    for (const [x, y] of path) for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) if (ex.inb(x + dx, y + dy)) ex.explored[ex.idx(x + dx, y + dy)] = 1;
+    const put = (i, e) => { const [x, y] = path[i]; ex.ents.push({ id: 7100 + i, x, y, rx: x, ry: y, ...e }); };
+    put(3, { kind: 'gold', amount: 12 });
+    put(LEN - 1, { kind: 'merchant', stock: null });
+    ex.computeFov();
+    M.engine.setScene(ex, null);
+    return { c: ex, skip: 0, bot(ex, st) {
+      const G = M.engine.G;
+      if (!st.go) { st.go = true; ex.player.path = path.slice(); ex.target = path[path.length - 1]; ex.tapFx(...ex.target, '#fffbea'); }
+      if (ex.modal) {
+        st.w = (st.w || 0) + 1;
+        const hits = G.hits.slice(Math.max(0, G.modalIndex));
+        if (ex.modal.title === 'MERCHANT' && st.w === (window.__SHOP_BUY ?? 40) && !st.bought) { st.bought = true; const h = hits[2]; tap(h.x + h.w / 2, h.y + h.h / 2); st.w = 0; }
+        else if (ex.modal.title === 'NEW WEAPON' && st.w === 26) { const h = hits.slice().sort((a, b) => b.x - a.x)[0]; tap(h.x + h.w / 2, h.y + h.h / 2); st.w = 0; }
+      }
+    } };
+  };
+
   return {
     load,
     async setup(name) {
@@ -223,7 +318,16 @@ window.TFPromo = (() => {
       const t0 = +vt.toFixed(3);
       this.step();
       const c = cur.c;
-      if (c.phase !== cur.lastPh) { if (c.phase === 'defeat' || c.phase === 'victory') log.push({ t: t0, text: c.phase.toUpperCase() }); cur.lastPh = c.phase; }
+      if (c.phase !== cur.lastPh) { if (c.phase === 'defeat' || c.phase === 'victory' || c.phase === 'rhythm') log.push({ t: t0, text: c.phase.toUpperCase() }); cur.lastPh = c.phase; }
+      if (cur.name === 'shop') {
+        const r = c.run, k = `${r.gold}|${r.weapons.length}`;
+        if (cur.lastK && k !== cur.lastK) log.push({ t: t0, text: r.weapons.length !== +cur.lastK.split('|')[1] ? 'LOOT' : 'BUY' });
+        cur.lastK = k;
+        if (c.modal && !cur.modalSeen) { cur.modalSeen = true; log.push({ t: t0, text: 'DIALOG' }); }
+        if (!c.modal) cur.modalSeen = false;
+        if (r.gold !== cur.lastG && cur.lastG !== undefined) log.push({ t: t0, text: 'BUY' });
+        cur.lastG = r.gold;
+      }
       if (cur.name === 'loot') {
         const r = c.run, k = `${r.gold}|${r.potions}|${r.weapons.length}`;
         if (cur.lastK && k !== cur.lastK) log.push({ t: t0, text: r.weapons.length !== +cur.lastK.split('|')[2] ? 'LOOT' : 'COIN' });

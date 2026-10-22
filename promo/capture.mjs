@@ -6,7 +6,7 @@ import path from 'node:path';
 const require = createRequire('/opt/node-tools/node_modules/');
 const { chromium } = require('playwright');
 
-const [scene, secs, outDir, port = '8765'] = process.argv.slice(2);
+const [scene, secs, outDir, port = '8765', knobs = '{}'] = process.argv.slice(2);
 fs.mkdirSync(outDir, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--autoplay-policy=no-user-gesture-required'] });
@@ -23,6 +23,7 @@ await page.addInitScript(() => {
   window.__adv = ms => { now += ms; const cbs = q; q = []; for (const cb of cbs) cb(now); };
   try { localStorage.clear(); localStorage.setItem('tapfighter.records.v1', JSON.stringify({ battles: 99, runs: 3, bestDepth: 9, bestLevel: 8 })); } catch {}
 });
+await page.addInitScript(k => Object.assign(window, JSON.parse(k)), knobs);
 await page.goto(`http://localhost:${port}/index.html`);
 await page.addScriptTag({ path: new URL('./bot.js', import.meta.url).pathname });
 await page.evaluate(() => TFPromo.load());
