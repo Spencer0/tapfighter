@@ -451,6 +451,9 @@ export class Explore {
 
   autoStep() {
     const p = this.player;
+    // Finish the current route before picking a new goal: replanning every step lets a monster
+    // shuffling in a doorway flip the plan back and forth forever.
+    if (p.path.length) return;
     const found = this.autoPath();
     if (!found) {
       const stairs = this.ents.find(e => e.kind === 'stairs' && this.explored[this.idx(e.x, e.y)]);

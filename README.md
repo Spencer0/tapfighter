@@ -58,6 +58,7 @@ Runes are drawn by dragging with the mouse.
 | `src/dungeon.js` | procedural floor generation |
 | `src/data.js` | weapons, affixes, enemies, bosses, blessings, balance formulas |
 | `src/ui.js`, `src/font.js` | pixel UI kit and a 3x5 bitmap font |
+| `tools/sim/` | headless balance simulator: a bot plays full runs at a given accuracy (`node tools/sim/sim.mjs`, see its README) |
 | `wiki/` | the wiki. It imports the game's own data and sprites, so its stats and pictures always match the game |
 
 Run locally with any static server, e.g. `npx http-server .`, then open http://localhost:8080.
