@@ -4,7 +4,7 @@ name: Deploy site
 # Works with either Pages setting: "Deploy from a branch: gh-pages" or "GitHub Actions".
 on:
   push:
-    branches: [main, master, "claude/**"]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
