@@ -139,7 +139,7 @@ const R = (t, runes) => ({ t, type: 'rune', runes });
 // Balance knobs in one place (tools/sim/sim.mjs can override any of them with --set key=value).
 export const BAL = {
   foeHpPerFloor: 0.5, // monster HP grows by this share of its floor-1 HP each floor (linear)
-  foeDmgPerFloor: 0.11, // same for monster damage
+  foeDmgPerFloor: 0.48, // same for monster damage
   foeDmg: 1, // flat multiplier on all monster damage
   hpPerLevel: 4, // hero max HP gained per level
   perfectMul: 1.5, // damage of a perfect strike or note
@@ -150,8 +150,8 @@ export const BAL = {
   rhythmMiss: 0.25, // a missed note hurts for this share of the monster's damage
   potionHeal: 0.4, // share of max HP a Life Bottle restores
   potionCooldown: 1000, // ms between bottles in battle
-  potionDrop: 0.15, // chance a regular monster drops a bottle
-  potionCap: 99, // most Life Bottles you can carry; extras are left behind
+  potionDrop: 0.1, // chance a regular monster drops a bottle
+  potionCap: 5, // most Life Bottles you can carry; extras are left behind
 };
 
 // Battles run both sides at once; everything speeds up with depth (ring times, gaps, rests, songs).

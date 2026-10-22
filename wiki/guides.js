@@ -1,7 +1,7 @@
 // Guide, list, item, object and location pages.
 import {
   THEMES, WEAPONS, AFFIXES, ENEMIES, BLESSINGS, RARITY, FINAL_DEPTH, RUNE_TIME, SIGIL_TIME, scaleEnemy, xpNeed, weaponStats,
-  tempoAt, HERO_REST, FOE_REST, DOT_TICK,
+  tempoAt, HERO_REST, FOE_REST, DOT_TICK, BAL,
 } from '../src/data.js';
 import { RHYTHM_PERFECT, RHYTHM_GOOD } from '../src/rhythm.js';
 import { RUNES } from '../src/runes.js';
@@ -125,7 +125,7 @@ ${h2('The bottom bar')}<ul>
 <li><b>Weapon slots</b>: swapping throws away the rest of your current volley; the next one starts with the new weapon after a quarter of a second.</li>
 <li><b>${link('Life_Bottle', 'Life Bottle')}</b>: heals 40% of max HP. You can drink at any time (one bottle per second).</li>
 <li><b>RUN</b>: 55% chance to escape. On failure you lose your current volley and the monster attacks immediately. You cannot flee from bosses. A monster you escape from is dazed for 3 turns on the map.</li></ul>
-${h2('Winning and fleeing')}<p>Defeated monsters drop ${link('Coins', 'coins')} and experience, sometimes a ${link('Life_Bottle', 'Life Bottle')} (15%) or a weapon (10%). See each monster's page for exact drops.</p>
+${h2('Winning and fleeing')}<p>Defeated monsters drop ${link('Coins', 'coins')} and experience, sometimes a ${link('Life_Bottle', 'Life Bottle')} (${Math.round(BAL.potionDrop * 100)}%) or a weapon (10%). See each monster's page for exact drops.</p>
 ${guideNav()}`, ['Guides', 'Mechanics'], 'fight battle parry');
 
   // ---------- Timing windows ----------
@@ -171,8 +171,8 @@ ${h2('Damage you take')}
 blocked = round(hit × (1 − min(0.9, 0.6 + 0.15 × Iron Guard stacks)))
 feint   = round(hit × 0.6)</code>
 ${h2('Monster scaling')}
-<code class="formula">HP     = round(base HP × (1 + 0.50 × (floor − 1)))
-damage = round(base dmg × (1 + 0.11 × (floor − 1)))
+<code class="formula">HP     = round(base HP × (1 + ${BAL.foeHpPerFloor.toFixed(2)} × (floor − 1)))
+damage = round(base dmg × (1 + ${BAL.foeDmgPerFloor.toFixed(2)} × (floor − 1)))
 armour = base armour + floor(floor / 6)
 XP     = round(base XP × (1 + 0.15 × (floor − 1)))
 coins  = round(random(base range) × (1 + 0.10 × (floor − 1)) × (1 + 0.4 × Greed stacks))</code>
@@ -311,7 +311,8 @@ ${guideNav()}`, ['Items'], 'perk level up');
     `<p>The <b>Life Bottle</b> is the main healing item. You start each run with 2. Tap the bottle in the bottom bar to drink one.</p>
 <ul><li>Heals 40% of max HP (+50% per ${link('Blessings', 'Alchemy')} stack). It cannot be drunk at full HP.</li>
 <li>In battle you can drink at any time, at most one bottle per second.</li>
-<li>Found lying on floors (0-2 per floor), in 25% of chests, dropped by 15% of monsters and every boss, and sold by the ${link('Merchant')}.</li>
+<li>Found lying on floors (0-2 per floor), in 25% of chests, dropped by ${Math.round(BAL.potionDrop * 100)}% of monsters and every boss, and sold by the ${link('Merchant')}.</li>
+<li>You can carry at most <b>${BAL.potionCap}</b>. When your belt is full, bottles on the floor stay where they are, chest and monster bottles are lost, and the merchant won't sell you more.</li>
 <li><b>Bottle Bearer</b> grants 2 immediately.</li></ul>`, ['Items'], 'potion heal');
   page('Bone_Elixir', 'Bone Elixir', () => itemBox('Bone Elixir', img(SPR.potion, 6), [['Effect', '+10 max HP and +10 HP'], ['Price', '70 + 6 × floor']]) +
     `<p>A permanent upgrade sold only by the ${link('Merchant')}. Each merchant stocks one.</p>`, ['Items']);
@@ -411,6 +412,7 @@ ${h2('Growth')}<p>He gains +4 max HP per level (see ${link('Experience')}), plus
 
   // ---------- Update history ----------
   page('Update_history', 'Update history', () => table(['Date', 'Update'], [
+    ['22 October 2026', `<b>Deeper floors hit harder, bottles are scarcer.</b> Monster damage now grows by +${Math.round(BAL.foeDmgPerFloor * 100)}% of its floor-1 value per floor (was +11%): ×${(1 + 4 * BAL.foeDmgPerFloor).toFixed(1)} on floor 5, ×${(1 + 14 * BAL.foeDmgPerFloor).toFixed(1)} on floor 15. Monsters drop a Life Bottle ${Math.round(BAL.potionDrop * 100)}% of the time (was 15%), and you can carry at most ${BAL.potionCap}. AUTO no longer stops repeatedly for a monster it already reported.`],
     ['20 October 2026', '<b>Tougher monsters.</b> Monster HP now grows by +50% of its floor-1 value per floor (was +20%): ×1.5 on floor 2, ×3 on floor 5, ×8 on floor 15.'],
     ['20 October 2026', '<b>Two-thumb combat and rhythm duels.</b> Battles are no longer turn-based: you strike with your right thumb while defending with your left, and everything speeds up the deeper you go. New monsters, the <b>Bone Bard</b> and the <b>Banshee</b>, challenge you to four-lane rhythm duels, and every boss breaks into a rhythm encore at half health.'],
     ['20 October 2026', '<b>Runes, autoexplore and stair beacons.</b> Some monsters now cast <b>rune curses</b> you dispel by tracing the glyph, and flawless strike turns earn a <b>sigil</b> to trace for a bonus blast. New blessing: Rune Lore. An <b>AUTO</b> button explores the floor for you, and stairs are now marked with a light pillar, an off-screen pointer and a DESCEND button.'],

@@ -251,7 +251,7 @@ export class Explore {
     this.computeFov();
     if (this.auto) {
       const seen = this.ents.find(e => e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)] && !this.autoSeen.has(e.id));
-      if (seen) { this.stopAuto(`${ENEMIES[seen.type].name} spotted!`, '#ff6050'); seen.alert = Math.max(seen.alert || 0, 0.6); }
+      if (seen) { this.autoSeen.add(seen.id); this.stopAuto(`${ENEMIES[seen.type].name} spotted!`, '#ff6050'); seen.alert = Math.max(seen.alert || 0, 0.6); }
     }
     const last = p.path.length === 0;
     if (last) this.target = null;
@@ -439,7 +439,10 @@ export class Explore {
     if (this.auto) { this.stopAuto('Autoexplore off.', '#a898b0'); return; }
     if (this.modal || this.inCombat) return;
     this.auto = true; this.autoGoal = null;
-    this.autoSeen = new Set(this.ents.filter(e => e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)]).map(e => e.id));
+    // Monsters already announced stay announced for the floor, so one pacing behind a wall
+    // doesn't stop AUTO every time it steps back into view.
+    if (!this.autoSeen || this.autoSeenFloor !== this.floorSeed) { this.autoSeen = new Set(); this.autoSeenFloor = this.floorSeed; }
+    for (const e of this.ents) if (e.kind === 'enemy' && this.visible[this.idx(e.x, e.y)]) this.autoSeen.add(e.id);
     sfx('tap');
     if (this.player.t >= 1) this.autoStep();
   }
