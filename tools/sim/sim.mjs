@@ -1,6 +1,6 @@
 // Headless balance simulator: plays full runs of the real game with a simulated player.
 //
-//   node tools/sim/sim.mjs                      # 100%, 80% and 50% accuracy, 200 runs each
+//   node tools/sim/sim.mjs                      # 90%, 80% and 50% accuracy, 200 runs each
 //   node tools/sim/sim.mjs --acc 0.8 --runs 500 --seed 7 --jobs 8
 //   node tools/sim/sim.mjs --acc 0.9 --runs 1 --verbose   # one run, floor by floor
 //
@@ -93,7 +93,7 @@ async function worker() {
 }
 
 function parseArgs() {
-  const a = { acc: [1, 0.8, 0.5], runs: 200, seed: 1, jobs: availableParallelism(), verbose: false, json: false, set: {} };
+  const a = { acc: [0.9, 0.8, 0.5], runs: 200, seed: 1, jobs: availableParallelism(), verbose: false, json: false, set: {} };
   const v = process.argv.slice(2);
   for (let i = 0; i < v.length; i++) {
     const k = v[i];

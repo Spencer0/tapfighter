@@ -1,7 +1,7 @@
 // Hill-climbs the BAL knobs in src/data.js toward target win rates per accuracy.
 //
 //   node tools/sim/tune.mjs --iters 30 --runs 40
-//   node tools/sim/tune.mjs --start foeDmg=0.8,potionCooldown=3000 --target 1:0.9,0.8:0.5,0.5:0.1
+//   node tools/sim/tune.mjs --start foeDmg=0.8,potionCooldown=3000 --target 0.9:0.8,0.8:0.5,0.5:0.1
 //
 // Each candidate plays `runs` games per accuracy (common seeds, so candidates are compared on
 // the same dungeons). Prints every improvement; the last line is the best --set string found.
@@ -20,7 +20,7 @@ const RANGES = {
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const iters = +opt('iters', 30), runs = +opt('runs', 40), seed = +opt('seed', 11);
-const target = Object.fromEntries(opt('target', '1:0.9,0.8:0.5,0.5:0.1').split(',').map(p => p.split(':').map(Number)));
+const target = Object.fromEntries(opt('target', '0.9:0.8,0.8:0.5,0.5:0.1').split(',').map(p => p.split(':').map(Number)));
 const accs = Object.keys(target).map(Number);
 const keys = (opt('keys', '') || Object.keys(RANGES).join(',')).split(',');
 let cur = { ...Object.fromEntries(keys.map(k => [k, BAL[k]])) };

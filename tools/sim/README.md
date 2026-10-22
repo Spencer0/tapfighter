@@ -4,7 +4,7 @@ Plays full Tapfighter runs headless in Node (v18+, no dependencies) with a simul
 game's own modules (`src/`). Use it to see how likely players of a given skill are to beat the game.
 
 ```sh
-node tools/sim/sim.mjs                                   # 100%, 80% and 50% accuracy, 200 runs each
+node tools/sim/sim.mjs                                   # 90%, 80% and 50% accuracy, 200 runs each
 node tools/sim/sim.mjs --acc 0.9 --runs 500 --seed 3     # other skills / sample sizes
 node tools/sim/sim.mjs --set foeDmg=1.2,potionCooldown=3000   # try balance changes without editing code
 node tools/sim/sim.mjs --acc 0.8 --only 12345 --verbose  # replay one run floor by floor
