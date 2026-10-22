@@ -1,0 +1,10 @@
+{
+  "name": "Tapfighter",
+  "short_name": "Tapfighter",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0b0714",
+  "theme_color": "#0b0714",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
