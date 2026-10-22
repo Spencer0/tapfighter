@@ -11,9 +11,9 @@ import { BAL } from '../../src/data.js';
 
 const SIM = fileURLToPath(new URL('./sim.mjs', import.meta.url));
 const RANGES = {
-  foeDmg: [0.5, 2], foeDmgPerFloor: [0.05, 0.8], foeHpPerFloor: [0.25, 0.7], hpPerLevel: [2, 12],
+  foeDmg: [0.5, 4], foeDmgPerFloor: [0.05, 0.8], foeHpPerFloor: [0.25, 0.7], hpPerLevel: [2, 12],
   guardPerfect: [30, 100], guardGood: [110, 200], blockAbsorb: [0.1, 0.7], rhythmMiss: [0.05, 0.3],
-  potionHeal: [0.25, 0.7], potionCooldown: [800, 8000], potionDrop: [0.05, 0.6],
+  potionHeal: [0.25, 0.7], potionCooldown: [800, 8000], potionDrop: [0.02, 0.6], potionCap: [2, 10],
   comboCap: [0.2, 1], perfectMul: [1.1, 1.6],
 };
 
@@ -47,7 +47,7 @@ for (let i = 0; i < iters; i++) {
     const k = keys[Math.floor(Math.random() * keys.length)];
     const [lo, hi] = RANGES[k];
     cand[k] = Math.min(hi, Math.max(lo, cand[k] + (Math.random() * 2 - 1) * step * (hi - lo)));
-    if (k === 'guardPerfect' || k === 'guardGood' || k === 'potionCooldown') cand[k] = Math.round(cand[k]);
+    if (['guardPerfect', 'guardGood', 'potionCooldown', 'potionCap'].includes(k)) cand[k] = Math.round(cand[k]);
   }
   const r = evaluate(cand);
   const better = r.loss < best.loss;

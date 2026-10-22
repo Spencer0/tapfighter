@@ -288,7 +288,7 @@ export class Player {
     const e = this.shopEnt;
     const stock = e && e.stock;
     if (stock) {
-      const buy = s => { if (!s.sold && run.gold >= s.price) { ex.buy(e, s); return true; } return false; };
+      const buy = s => { if (s.sold || run.gold < s.price) return false; ex.buy(e, s); return s.sold; };
       const w = stock.find(s => s.kind === 'weapon' && !s.sold);
       if (w && this.wants(w.weapon, run) && buy(w)) return; // a weapon dialog opens on top
       for (const s of stock) if (s.kind === 'potion' && run.potions < 4) if (buy(s)) return;

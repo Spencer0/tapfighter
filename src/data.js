@@ -151,6 +151,7 @@ export const BAL = {
   potionHeal: 0.4, // share of max HP a Life Bottle restores
   potionCooldown: 1000, // ms between bottles in battle
   potionDrop: 0.15, // chance a regular monster drops a bottle
+  potionCap: 99, // most Life Bottles you can carry; extras are left behind
 };
 
 // Battles run both sides at once; everything speeds up with depth (ring times, gaps, rests, songs).
@@ -242,11 +243,14 @@ export function pickBlessings(rng, run, n = 3) {
 export function applyBlessing(run, id) {
   run.bless[id] = (run.bless[id] || 0) + 1;
   if (id === 'vigor') { run.maxHp += 15; run.hp = Math.min(run.maxHp, run.hp + 15); }
-  if (id === 'bottle') run.potions += 2;
+  if (id === 'bottle') addPotions(run, 2);
 }
 
 export const xpNeed = level => Math.floor(16 + level * 12 + level * level * 2);
 export const potionHeal = run => Math.round(run.maxHp * BAL.potionHeal * (1 + 0.5 * (run.bless.alchemy || 0)));
+export const potionRoom = run => Math.max(0, BAL.potionCap - run.potions);
+// Add bottles up to the carry cap; returns how many fit.
+export function addPotions(run, n = 1) { const k = Math.min(n, potionRoom(run)); run.potions += k; return k; }
 export const goldMul = run => 1 + 0.4 * (run.bless.greed || 0);
 
 // Grant XP; returns number of levels gained.

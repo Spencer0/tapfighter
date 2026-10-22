@@ -9,7 +9,7 @@ import { SPR, weaponIcon } from './sprites.js';
 import { disc, ring, ellipse, line, silhouette, pixelsOf, clamp, lerp } from './gfx.js';
 import {
   ENEMIES, weaponStats, potionHeal, gainXp, goldMul, makeWeapon, weaponName, RARITY, RUNE_TIME, SIGIL_TIME, runeTime,
-  tempoAt, HERO_REST, FOE_REST, DOT_TICK, BAL,
+  tempoAt, HERO_REST, FOE_REST, DOT_TICK, BAL, addPotions,
 } from './data.js';
 import { RUNES, gradeRune, drawRune } from './runes.js';
 import { LANES, LANE_COL, RHYTHM_PERFECT, RHYTHM_GOOD, makeSong } from './rhythm.js';
@@ -611,7 +611,7 @@ export class Combat {
     let drop = null, potion = false;
     if (this.def.boss) drop = makeWeapon(rand, depth + 1, null, rand.chance(0.35) ? 3 : 2);
     else if (rand.chance(0.1)) drop = makeWeapon(rand, depth);
-    if (rand.chance(this.def.boss ? 1 : BAL.potionDrop)) { potion = true; run.potions++; }
+    if (rand.chance(this.def.boss ? 1 : BAL.potionDrop) && addPotions(run)) potion = true;
     this.rewards = { xp, gold, levels, drop, potion };
     this.after(900, () => { this.canLeave = true; });
   }
